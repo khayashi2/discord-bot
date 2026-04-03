@@ -10,6 +10,13 @@ A Discord bot that tracks server activity and displays fun analytics on a web da
 - **Migrations**: Alembic + SQLAlchemy 2.0
 - **CI/CD**: GitHub Actions (lint, test, Docker build)
 
+## Features
+
+- **Live Message Tracking** — the bot listens to every message in your server and stores it in PostgreSQL (content, author, channel, emoji count, attachments, and more)
+- **Upsert Strategy** — guilds, channels, and members are automatically upserted so metadata stays fresh without duplicates
+- **Historical Backfill** — a one-off script can ingest past messages from channel history
+- **Web Dashboard** — a FastAPI-powered dashboard to visualize analytics (work in progress)
+
 ## Getting Started
 
 ### Prerequisites
@@ -21,6 +28,7 @@ A Discord bot that tracks server activity and displays fun analytics on a web da
 ### Setup
 
 1. Clone the repo and copy the environment file:
+
    ```bash
    cp .env.example .env
    ```
@@ -28,6 +36,7 @@ A Discord bot that tracks server activity and displays fun analytics on a web da
 2. Fill in your `.env` with your Discord bot token and guild ID.
 
 3. Start all services:
+
    ```bash
    docker compose up -d db
    docker compose --profile migration run --rm migrate
@@ -54,10 +63,11 @@ ruff check .
 
 ## Project Structure
 
-```
+```text
 ├── bot/                  # Discord bot (discord.py)
 │   ├── main.py           # Bot entry point
 │   └── cogs/             # Command extensions
+│       └── listener.py   # Live message listener & DB persistence
 ├── dashboard/            # Web dashboard (FastAPI)
 │   ├── app.py            # Dashboard entry point
 │   ├── templates/        # Jinja2 HTML templates
@@ -68,6 +78,7 @@ ruff check .
 │   └── migrations/       # Alembic migrations
 ├── scripts/              # One-off scripts
 │   └── backfill.py       # Historical data ingestion
+├── config.py             # Centralized settings from env vars
 ├── tests/                # Test suite
 ├── docker-compose.yml    # Service orchestration
 ├── Dockerfile            # Container image
