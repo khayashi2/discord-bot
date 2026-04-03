@@ -73,4 +73,4 @@ The `listener.py` cog uses discord.py's `Cog.listener()` decorator to hook into 
 
 ## Coding Standards and Best Practices
 
-Use [PEP-0008](https://peps.python.org/pep-0008/)as a reference for coding practice in Python. As for other tech stacks, follow what a professional software engineer would commonly follow for practices and standards as stated on [Geek for Geeks SWE Guidelines](https://www.geeksforgeeks.org/software-engineering/coding-standards-and-guidelines/)
+Use [PEP-0008](https://peps.python.org/pep-0008/) as a reference for coding practice in Python. As for other tech stacks, follow what a professional software engineer would commonly follow for practices and standards as stated on [Geek for Geeks SWE Guidelines](https://www.geeksforgeeks.org/software-engineering/coding-standards-and-guidelines/)
