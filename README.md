@@ -85,6 +85,50 @@ ruff check .
 └── .github/workflows/    # CI/CD pipeline
 ```
 
+## Design Decisions & Thought Process
+
+This section documents the "why" behind key decisions — useful context if you're learning or extending the project.
+
+### Storing Full Message Content
+
+**What:** Every message is saved in full (not just metadata like timestamps or word counts).
+
+**Why:** Storing raw content keeps your options open. You can always derive new analytics later (e.g., sentiment analysis, slang detection) without re-fetching from Discord's API — which has strict rate limits and only retains messages in accessible channels.
+
+**Consider:** This means the database will grow faster and stores potentially sensitive text. In a production bot you'd want to think about data retention policies and user privacy. For a portfolio project, this trade-off is worth the flexibility.
+
+### Upserts for Guilds, Channels, and Members
+
+**What:** Every time a message arrives, the bot upserts (insert-or-update) the guild, channel, and member before inserting the message.
+
+**Why:** Discord metadata changes constantly — users update display names, channels get renamed, servers change icons. Upserting on every message keeps your local data fresh without needing a separate sync job. Messages themselves use `ON CONFLICT DO NOTHING` since their content doesn't change after creation.
+
+**Consider:** This adds a few extra queries per message. At small scale it's negligible. If you were handling thousands of messages per second, you'd batch writes or use a queue. For a single-server bot, simplicity wins.
+
+### Composite Primary Key on Members
+
+**What:** The `members` table uses `(id, guild_id)` as its primary key instead of just the Discord user ID.
+
+**Why:** The same Discord user can be in multiple servers with different display names, avatars, and join dates. A composite key lets you track per-server member data accurately.
+
+**Consider:** This means foreign keys pointing to members (like on messages) also need both columns. It's a bit more work in queries, but it correctly models the relationship.
+
+### Emoji Counting with Regex
+
+**What:** A compiled regex pattern counts both custom Discord emojis (`<:name:id>`) and standard Unicode emojis in each message.
+
+**Why:** Pre-computing `emoji_count` at insert time means dashboard queries can sort/filter by emoji usage without scanning message content at read time. The regex handles both emoji types in one pass.
+
+**Consider:** Unicode emoji ranges evolve over time — new emoji get added with each Unicode release. The current pattern covers the most common ranges but won't catch every future emoji. For a portfolio project this is a reasonable trade-off; a production bot might use a dedicated emoji library.
+
+### Async Database Access
+
+**What:** The bot uses `asyncpg` with SQLAlchemy's async sessions instead of synchronous database calls.
+
+**Why:** discord.py is fully async — blocking the event loop with synchronous DB calls would freeze the bot for every message. Async sessions let database writes happen without blocking other events (like responding to commands).
+
+**Consider:** Async code is harder to debug (stack traces are less obvious). SQLAlchemy's async API mirrors the sync one closely, but you need to be careful with session lifetimes — always use `async with` to ensure sessions are properly closed.
+
 ## Branch Strategy
 
 - `main` — protected, no direct commits
