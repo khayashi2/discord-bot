@@ -102,9 +102,7 @@ class TestListenerCog:
         mock_session = AsyncMock()
 
         with patch("bot.cogs.listener.async_session") as mock_factory:
-            mock_factory.return_value.__aenter__ = AsyncMock(
-                return_value=mock_session
-            )
+            mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
             await cog.on_message(message)
