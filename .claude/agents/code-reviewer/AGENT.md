@@ -67,3 +67,4 @@ If no issues are found, say so clearly — don't invent problems.
 - No hardcoded credentials — everything via `.env`
 - Async everywhere — asyncpg + SQLAlchemy async sessions
 - Upserts use `ON CONFLICT` patterns
+- follow good coding practices and standards as mentioned in CLAUDE.md

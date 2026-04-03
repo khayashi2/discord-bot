@@ -66,8 +66,13 @@ Capture full output. Report:
 ### Step 6: Verify Dashboard Starts
 ```bash
 docker compose up -d dashboard
-sleep 3
-curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/
+# Wait for dashboard to be ready (up to 15 seconds)
+for i in $(seq 1 15); do
+  STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/ 2>/dev/null)
+  [ "$STATUS" = "200" ] && break
+  sleep 1
+done
+echo "$STATUS"
 ```
 Check that the dashboard responds with HTTP 200. If it has API endpoints, test a few:
 ```bash

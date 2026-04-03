@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/hooks/validate-commit-msg.sh"
+            "command": "bash \"$(git rev-parse --show-toplevel)/.claude/hooks/validate-commit-msg.sh\""
           }
         ]
       }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/hooks/auto-format-python.sh"
+            "command": "bash \"$(git rev-parse --show-toplevel)/.claude/hooks/auto-format-python.sh\""
           }
         ]
       }
