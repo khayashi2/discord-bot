@@ -45,6 +45,9 @@ docker-compose.override.yml
 # Alembic
 *.pyc
 
+# Claude Code
+.claude/settings.local.json
+
 # Logs
 *.log
 logs/

@@ -16,13 +16,13 @@ Arguments: `$ARGUMENTS`
 
 1. **Run ruff check** (linting):
    ```bash
-   cd /Users/khayashi2/vs-code/repos/discord-bot && ruff check $ARGUMENTS .
+   ruff check $ARGUMENTS .
    ```
    If arguments provided, check only those paths. Otherwise check the whole project.
 
 2. **Run ruff format check** (formatting):
    ```bash
-   cd /Users/khayashi2/vs-code/repos/discord-bot && ruff format --check $ARGUMENTS .
+   ruff format --check $ARGUMENTS .
    ```
 
 3. **If issues found**, ask the user if they'd like auto-fixes applied:

@@ -23,7 +23,7 @@ Run these steps in order. Stop and report immediately if any step fails.
 
 ### Step 1: Check Prerequisites
 ```bash
-cd /Users/khayashi2/vs-code/repos/discord-bot
+cd "$(git rev-parse --show-toplevel)"
 docker compose version
 python --version
 ```
@@ -47,7 +47,7 @@ Verify migrations complete without errors. If they fail, report the exact error.
 
 ### Step 4: Lint Check
 ```bash
-cd /Users/khayashi2/vs-code/repos/discord-bot
+cd "$(git rev-parse --show-toplevel)"
 ruff check .
 ruff format --check .
 ```
@@ -55,7 +55,7 @@ Report any lint or formatting violations found.
 
 ### Step 5: Run Tests
 ```bash
-cd /Users/khayashi2/vs-code/repos/discord-bot
+cd "$(git rev-parse --show-toplevel)"
 pytest tests/ -v --tb=short 2>&1
 ```
 Capture full output. Report:

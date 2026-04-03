@@ -22,7 +22,7 @@ Arguments: `$ARGUMENTS`
 
 4. **Generate the migration** by running:
    ```bash
-   cd /Users/khayashi2/vs-code/repos/discord-bot && alembic revision --autogenerate -m "<description>"
+   alembic revision --autogenerate -m "<description>"
    ```
    If autogenerate isn't available or fails, create the migration manually following the pattern in existing versions.
 

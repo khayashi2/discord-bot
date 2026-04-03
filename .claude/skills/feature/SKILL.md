@@ -16,7 +16,7 @@ Arguments: `$ARGUMENTS`
 
 1. **Check current git state**:
    ```bash
-   cd /Users/khayashi2/vs-code/repos/discord-bot && git status && git branch --show-current
+   git status && git branch --show-current
    ```
 
 2. **Ensure clean working tree**. If there are uncommitted changes, warn the user before proceeding.
@@ -25,7 +25,7 @@ Arguments: `$ARGUMENTS`
    - Branch name format: `feature/<feature-name>` (kebab-case)
    - Convert the argument to kebab-case (e.g., "word tracker" -> "word-tracker")
    ```bash
-   cd /Users/khayashi2/vs-code/repos/discord-bot && git checkout -b feature/<kebab-case-name>
+   git checkout -b feature/<kebab-case-name>
    ```
 
 4. **Confirm** the branch was created and is active.

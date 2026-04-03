@@ -8,8 +8,9 @@ if [[ "$FILE_PATH" != *.py ]]; then
   exit 0
 fi
 
-# Only format files within the discord-bot project
-if [[ "$FILE_PATH" != /Users/khayashi2/vs-code/repos/discord-bot/* ]]; then
+# Only format files within the project
+PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+if [[ -z "$PROJECT_ROOT" || "$FILE_PATH" != "$PROJECT_ROOT"/* ]]; then
   exit 0
 fi
 

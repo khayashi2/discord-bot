@@ -16,18 +16,18 @@ Arguments: `$ARGUMENTS`
 
 1. **Ensure the database is running** (needed for integration tests):
    ```bash
-   cd /Users/khayashi2/vs-code/repos/discord-bot && docker compose ps db
+   docker compose ps db
    ```
    If not running, inform the user they may need `docker compose up -d db`.
 
 2. **Run the tests**:
    - If arguments provided, run specific tests:
      ```bash
-     cd /Users/khayashi2/vs-code/repos/discord-bot && pytest $ARGUMENTS -v
+     pytest $ARGUMENTS -v
      ```
    - If no arguments, run the full suite:
      ```bash
-     cd /Users/khayashi2/vs-code/repos/discord-bot && pytest tests/ -v
+     pytest tests/ -v
      ```
 
 3. **Report results** clearly:
