@@ -35,6 +35,7 @@ A Discord bot that tracks server activity and displays fun analytics (top words,
 - `scripts/` — One-off scripts (e.g., historical backfill)
 - `tests/` — Test suite (pytest + pytest-asyncio)
 - `config.py` — Centralized settings from environment variables
+- `.claude/` — Claude Code configuration (agents, skills, hooks) for development workflow automation
 
 ## Key Design Decisions
 
