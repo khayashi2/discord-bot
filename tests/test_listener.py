@@ -1,7 +1,6 @@
 """Tests for the message listener cog."""
 
-import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -27,14 +26,14 @@ def _make_message(
     guild.name = guild_name
     guild.icon = None
     guild.member_count = 5
-    guild.created_at = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    guild.created_at = datetime(2024, 1, 1, tzinfo=UTC)
 
     channel = MagicMock()
     channel.id = channel_id
     channel.name = channel_name
     channel.guild = guild
     channel.type = "text"
-    channel.created_at = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    channel.created_at = datetime(2024, 1, 1, tzinfo=UTC)
 
     author = MagicMock()
     author.id = author_id
@@ -42,7 +41,7 @@ def _make_message(
     author.display_name = author_name
     author.avatar = None
     author.bot = is_bot
-    author.joined_at = datetime(2024, 6, 1, tzinfo=timezone.utc)
+    author.joined_at = datetime(2024, 6, 1, tzinfo=UTC)
 
     message = MagicMock()
     message.id = message_id
@@ -52,7 +51,7 @@ def _make_message(
     message.content = content
     message.attachments = []
     message.embeds = []
-    message.created_at = datetime(2025, 1, 15, tzinfo=timezone.utc)
+    message.created_at = datetime(2025, 1, 15, tzinfo=UTC)
     message.edited_at = None
 
     return message
@@ -95,23 +94,18 @@ class TestListenerCog:
         cog = Listener(bot)
         message = _make_message()
 
-        mock_session_instance = AsyncMock()
-        mock_ctx = AsyncMock()
-        mock_ctx.__aenter__ = AsyncMock(return_value=mock_session_instance)
-        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        cog._upsert_guild = AsyncMock()
+        cog._upsert_channel = AsyncMock()
+        cog._upsert_member = AsyncMock()
+        cog._insert_message = AsyncMock()
 
-        mock_begin = AsyncMock()
-        mock_begin.__aenter__ = AsyncMock(return_value=None)
-        mock_begin.__aexit__ = AsyncMock(return_value=False)
-        mock_session_instance.begin.return_value = mock_begin
+        mock_session = AsyncMock()
 
-        with patch("bot.cogs.listener.async_session") as mock_session_factory:
-            mock_session_factory.return_value = mock_ctx
-            # Patch the upsert methods to verify they are called
-            cog._upsert_guild = AsyncMock()
-            cog._upsert_channel = AsyncMock()
-            cog._upsert_member = AsyncMock()
-            cog._insert_message = AsyncMock()
+        with patch("bot.cogs.listener.async_session") as mock_factory:
+            mock_factory.return_value.__aenter__ = AsyncMock(
+                return_value=mock_session
+            )
+            mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
             await cog.on_message(message)
 

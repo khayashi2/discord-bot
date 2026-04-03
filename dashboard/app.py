@@ -26,8 +26,9 @@ templates = Jinja2Templates(directory="dashboard/templates")
 async def index(request: Request) -> HTMLResponse:
     """Render the main dashboard page."""
     return templates.TemplateResponse(
-        "index.html",
-        {"request": request, "title": "Discord Analytics"},
+        request=request,
+        name="index.html",
+        context={"title": "Discord Analytics"},
     )
 
 

@@ -32,11 +32,12 @@ class Listener(commands.Cog):
         if message.guild is None:
             return
 
-        async with async_session() as session, session.begin():
+        async with async_session() as session:
             await self._upsert_guild(session, message.guild)
             await self._upsert_channel(session, message.channel)
             await self._upsert_member(session, message.author, message.guild)
             await self._insert_message(session, message)
+            await session.commit()
 
     async def _upsert_guild(self, session, guild: discord.Guild) -> None:
         stmt = (
