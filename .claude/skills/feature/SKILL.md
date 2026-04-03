@@ -15,6 +15,7 @@ Arguments: `$ARGUMENTS`
 ## Steps
 
 1. **Check current git state**:
+
    ```bash
    git status && git branch --show-current
    ```
@@ -24,6 +25,7 @@ Arguments: `$ARGUMENTS`
 3. **Create and switch to the new branch**:
    - Branch name format: `feature/<feature-name>` (kebab-case)
    - Convert the argument to kebab-case (e.g., "word tracker" -> "word-tracker")
+
    ```bash
    git checkout -b feature/<kebab-case-name>
    ```
@@ -31,6 +33,8 @@ Arguments: `$ARGUMENTS`
 4. **Confirm** the branch was created and is active.
 
 ## Important
+
 - Never branch from anything other than `main` unless the user specifies otherwise
 - Always ensure `main` is up to date first: `git pull origin main` (if remote exists)
 - Branch names should be lowercase kebab-case after `feature/`
+- Pull request titles should follow conventional commit style with a meaningful description when the feature is ready to merge

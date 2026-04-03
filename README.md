@@ -17,6 +17,28 @@ A Discord bot that tracks server activity and displays fun analytics on a web da
 - **Historical Backfill** — a one-off script can ingest past messages from channel history
 - **Web Dashboard** — a FastAPI-powered dashboard to visualize analytics (work in progress)
 
+## Plan
+
+### Phase 1 — Project Scaffold & CI/CD (do this first)
+
+Set up the repo structure, .gitignore, requirements.txt, .env.example, Dockerfile, docker-compose.yml, and a GitHub Actions workflow that runs linting and tests on PR. This gives you the skeleton everything else hangs on, and it matches your project instructions about branching and conventional commits.
+
+### Phase 2 — Data Model & Database
+
+Design and create your tables (users, messages, channels, etc.) with migrations (Alembic). This forces you to think about what data you need before writing any bot code.
+
+### Phase 3 — Historical Backfill Script
+
+Write the script that connects to Discord, iterates through channels, and ingests historical messages into the database. This is where you get your dataset.
+
+### Phase 4 — Live Bot Listener
+
+Set up the discord.py bot that listens for new messages and inserts them in real time. This is a thin layer on top of what you already built.
+
+### Phase 5 — Dashboard
+
+Build the API endpoints and frontend to visualize the trends.
+
 ## Getting Started
 
 ### Prerequisites
@@ -82,6 +104,11 @@ ruff check .
 ├── tests/                # Test suite
 ├── docker-compose.yml    # Service orchestration
 ├── Dockerfile            # Container image
+├── .claude/              # Claude Code configuration
+│   ├── agents/           # Specialized sub-agents
+│   ├── hooks/            # Tool-use hooks
+│   ├── skills/           # Reusable skill definitions
+│   └── settings.json     # Project-level settings
 └── .github/workflows/    # CI/CD pipeline
 ```
 

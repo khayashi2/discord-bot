@@ -35,6 +35,7 @@ A Discord bot that tracks server activity and displays fun analytics (top words,
 - `scripts/` — One-off scripts (e.g., historical backfill)
 - `tests/` — Test suite (pytest + pytest-asyncio)
 - `config.py` — Centralized settings from environment variables
+- `.claude/` — Claude Code configuration: agents (code-reviewer, dashboard-builder, etc.), skills, hooks, and `settings.json` for project-level settings (`settings.local.json` for local overrides, not committed)
 
 ## Key Design Decisions
 
@@ -74,3 +75,10 @@ The `listener.py` cog uses discord.py's `Cog.listener()` decorator to hook into 
 ## Coding Standards and Best Practices
 
 Use [PEP-0008](https://peps.python.org/pep-0008/) as a reference for coding practice in Python. As for other tech stacks, follow what a professional software engineer would commonly follow for practices and standards as stated on [Geek for Geeks SWE Guidelines](https://www.geeksforgeeks.org/software-engineering/coding-standards-and-guidelines/)
+
+### Project-Specific Rules
+
+- **Always use async sessions**: `async with async_session() as session` — never use synchronous `Session()`
+- **Use `select()` over `session.query()`**: Follow SQLAlchemy 2.0 style with `select(Model).where(...)` instead of the legacy `session.query(Model).filter(...)` pattern
+- **Upserts use raw `insert()` + `on_conflict_do_update()`**: For guilds, channels, and members, use PostgreSQL's native `ON CONFLICT` via SQLAlchemy's `insert()` dialect, not ORM merge
+- **Environment variables via `config.py`**: All settings flow through `config.py` — never read `os.environ` directly in bot or dashboard code
