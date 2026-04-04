@@ -53,10 +53,6 @@
             <div class="stat-label">Messages Sent</div>
         </div>
         <div class="stat-card">
-            <div class="stat-value" id="user-avg-length">0</div>
-            <div class="stat-label">Avg Message Length</div>
-        </div>
-        <div class="stat-card">
             <div class="stat-value" id="user-total-emoji">0</div>
             <div class="stat-label">Total Emoji Used</div>
         </div>
@@ -69,7 +65,7 @@
         <p id="userActivityEmpty" class="empty-state" style="display: none;">No activity data yet.</p>
     </div>
 
-    <!-- Top words & top channels -->
+    <!-- Top words & top profanity words -->
     <div class="grid">
         <div class="card">
             <h2>Top 10 Words</h2>
@@ -77,24 +73,17 @@
             <p id="userWordsEmpty" class="empty-state" style="display: none;">No word data yet.</p>
         </div>
         <div class="card">
-            <h2>Top Channels</h2>
-            <canvas id="userChannelsChart"></canvas>
-            <p id="userChannelsEmpty" class="empty-state" style="display: none;">No channel data yet.</p>
+            <h2>Top Profanity Words</h2>
+            <div id="userProfanityList" class="emoji-list"></div>
+            <p id="userProfanityEmpty" class="empty-state" style="display: none;">No profanity data.</p>
         </div>
     </div>
 
-    <!-- Message lengths & emoji -->
-    <div class="grid">
-        <div class="card">
-            <h2>Message Lengths</h2>
-            <canvas id="userLengthChart"></canvas>
-            <p id="userLengthEmpty" class="empty-state" style="display: none;">No message data yet.</p>
-        </div>
-        <div class="card">
-            <h2>Top Emoji</h2>
-            <div id="userEmojiList" class="emoji-list"></div>
-            <p id="userEmojiEmpty" class="empty-state" style="display: none;">No emoji data yet.</p>
-        </div>
+    <!-- Emoji -->
+    <div class="card">
+        <h2>Top Emoji</h2>
+        <div id="userEmojiList" class="emoji-list"></div>
+        <p id="userEmojiEmpty" class="empty-state" style="display: none;">No emoji data yet.</p>
     </div>
 </div>
 

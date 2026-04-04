@@ -69,13 +69,11 @@ function renderUserStats(data) {
 
     /* Overview stats */
     document.getElementById("user-msg-count").textContent = data.message_count.toLocaleString();
-    document.getElementById("user-avg-length").textContent = (data.message_lengths?.avg_length || 0).toLocaleString();
     document.getElementById("user-total-emoji").textContent = (data.emoji_stats?.total_emoji || 0).toLocaleString();
 
     renderUserActivity(data.activity || []);
     renderUserWords(data.top_words || []);
-    renderUserChannels(data.top_channels || []);
-    renderUserLengths(data.message_lengths || {});
+    renderUserProfanity(data.profanity_words || []);
     renderUserEmoji(data.emoji_stats?.top_emoji || []);
 }
 
@@ -150,66 +148,17 @@ function renderUserWords(data) {
     }
 }
 
-function renderUserChannels(data) {
-    destroyChart("channels");
-    const canvas = document.getElementById("userChannelsChart");
-    const empty = document.getElementById("userChannelsEmpty");
+function renderUserProfanity(data) {
+    const container = document.getElementById("userProfanityList");
+    const empty = document.getElementById("userProfanityEmpty");
     if (data.length) {
-        canvas.style.display = "block";
+        container.style.display = "flex";
         empty.style.display = "none";
-        charts.channels = new Chart(canvas, {
-            type: "bar",
-            data: {
-                labels: data.map(d => "#" + d.name),
-                datasets: [{
-                    data: data.map(d => d.count),
-                    backgroundColor: COLORS.bars.slice(0, data.length),
-                    borderRadius: 4,
-                }],
-            },
-            options: {
-                indexAxis: "y",
-                scales: {
-                    x: {
-                        grid: { display: false },
-                        title: { display: true, text: "Messages", color: COLORS.text },
-                    },
-                    y: { grid: { display: false } },
-                },
-            },
-        });
+        container.innerHTML = data.map(d =>
+            `<div class="emoji-item"><span>${escapeHtml(d.word)}</span><span class="emoji-count">&times;${d.count}</span></div>`
+        ).join("");
     } else {
-        canvas.style.display = "none";
-        empty.style.display = "block";
-    }
-}
-
-function renderUserLengths(data) {
-    destroyChart("lengths");
-    const canvas = document.getElementById("userLengthChart");
-    const empty = document.getElementById("userLengthEmpty");
-    const total = (data.short || 0) + (data.medium || 0) + (data.long || 0);
-    if (total > 0) {
-        canvas.style.display = "block";
-        empty.style.display = "none";
-        charts.lengths = new Chart(canvas, {
-            type: "doughnut",
-            data: {
-                labels: ["Short (<50)", "Medium (50-200)", "Long (>200)"],
-                datasets: [{
-                    data: [data.short, data.medium, data.long],
-                    backgroundColor: [COLORS.bars[3], COLORS.bars[0], COLORS.bars[1]],
-                    borderWidth: 0,
-                }],
-            },
-            options: {
-                plugins: {
-                    legend: { display: true, position: "bottom", labels: { color: COLORS.text } },
-                },
-            },
-        });
-    } else {
-        canvas.style.display = "none";
+        container.style.display = "none";
         empty.style.display = "block";
     }
 }

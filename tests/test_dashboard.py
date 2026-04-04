@@ -108,7 +108,6 @@ MOCK_QUERY_RESULTS = {
             "count": 500,
         },
     ],
-    "get_top_channels": [{"name": "general", "count": 800}],
     "get_activity_over_time": [{"day": "2026-04-01", "count": 100}],
     "get_top_words": [{"word": "discord", "count": 50}],
     "get_emoji_stats": {
@@ -119,13 +118,27 @@ MOCK_QUERY_RESULTS = {
     "get_profanity_leaderboard": [
         {"display_name": "Bob", "avatar_url": None, "count": 42},
     ],
-    "get_message_length_stats": {
-        "avg_length": 75,
-        "max_length": 500,
-        "short": 100,
-        "medium": 200,
-        "long": 50,
-    },
+    "get_activity_heatmap": [{"dow": 1, "hour": 14, "count": 25}],
+    "get_awards": [
+        {
+            "title": "Chatterbox",
+            "icon": "\U0001f4ac",
+            "member_display_name": "Alice",
+            "member_avatar_url": None,
+            "detail_text": "500 messages sent",
+        },
+    ],
+    "get_vocabulary_diversity": [
+        {
+            "display_name": "Alice",
+            "ttr": 0.45,
+            "unique_words": 450,
+            "total_words": 1000,
+        },
+    ],
+    "get_conversation_flow": [
+        {"from_user": "Alice", "to_user": "Bob", "count": 30},
+    ],
 }
 
 
@@ -160,6 +173,11 @@ async def test_index_returns_html_with_data():
     with ExitStack() as stack:
         _patch_session(stack)
         _patch_queries(stack, MOCK_QUERY_RESULTS)
+        stack.enter_context(
+            patch(
+                "dashboard.app.settings.load_profanity_words", return_value=frozenset()
+            )
+        )
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -176,13 +194,11 @@ async def test_index_returns_html_with_data():
         # Check chart canvases are present
         assert 'id="activityChart"' in html
         assert 'id="topUsersChart"' in html
-        assert 'id="topChannelsChart"' in html
         assert 'id="topWordsChart"' in html
         assert 'id="profanityChart"' in html
 
         # Check data is injected as JSON for Chart.js
         assert "discord" in html  # top word
-        assert "general" in html  # top channel
         assert "Alice" in html  # top user
 
 
@@ -197,23 +213,24 @@ async def test_index_handles_empty_data():
             "messages_today": 0,
         },
         "get_top_users": [],
-        "get_top_channels": [],
         "get_activity_over_time": [],
         "get_top_words": [],
         "get_emoji_stats": {"total_emoji": 0, "msgs_with_emoji": 0, "top_emoji": []},
         "get_profanity_leaderboard": [],
-        "get_message_length_stats": {
-            "avg_length": 0,
-            "max_length": 0,
-            "short": 0,
-            "medium": 0,
-            "long": 0,
-        },
+        "get_activity_heatmap": [],
+        "get_awards": [],
+        "get_vocabulary_diversity": [],
+        "get_conversation_flow": [],
     }
 
     with ExitStack() as stack:
         _patch_session(stack)
         _patch_queries(stack, empty_results)
+        stack.enter_context(
+            patch(
+                "dashboard.app.settings.load_profanity_words", return_value=frozenset()
+            )
+        )
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -288,25 +305,6 @@ async def test_user_stats_api_returns_json():
         )
         stack.enter_context(
             patch(
-                "dashboard.app.get_user_top_channels",
-                AsyncMock(return_value=[{"name": "general", "count": 50}]),
-            )
-        )
-        stack.enter_context(
-            patch(
-                "dashboard.app.get_user_message_length_distribution",
-                AsyncMock(
-                    return_value={
-                        "avg_length": 75,
-                        "short": 10,
-                        "medium": 20,
-                        "long": 5,
-                    }
-                ),
-            )
-        )
-        stack.enter_context(
-            patch(
                 "dashboard.app.get_user_emoji_stats",
                 AsyncMock(
                     return_value={
@@ -315,6 +313,12 @@ async def test_user_stats_api_returns_json():
                         "top_emoji": [{"emoji": "\U0001f60a", "count": 10}],
                     }
                 ),
+            )
+        )
+        stack.enter_context(
+            patch(
+                "dashboard.app.get_user_top_profanity_words",
+                AsyncMock(return_value=[{"word": "damn", "count": 5}]),
             )
         )
 
@@ -327,9 +331,8 @@ async def test_user_stats_api_returns_json():
         assert data["message_count"] == 100
         assert data["top_words"][0]["word"] == "hello"
         assert data["activity"][0]["day"] == "2026-04-01"
-        assert data["top_channels"][0]["name"] == "general"
-        assert data["message_lengths"]["avg_length"] == 75
         assert data["emoji_stats"]["total_emoji"] == 30
+        assert data["profanity_words"][0]["word"] == "damn"
 
 
 @pytest.mark.asyncio
