@@ -60,7 +60,7 @@ Whether a new migration is needed, and what it should contain.
 ```
 
 ## Project-Specific Notes
-- Members table uses composite PK: `(id, guild_id)`
+- Members table uses Discord user ID as PK (single-server bot, no guild tracking)
 - Upserts use `ON CONFLICT` — check that unique constraints support this
 - All timestamps should be `DateTime(timezone=True)` for PostgreSQL
 - The project uses `sqlalchemy.dialects.postgresql` for PG-specific types

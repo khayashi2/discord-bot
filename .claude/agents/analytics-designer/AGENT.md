@@ -16,7 +16,7 @@ You are a specialized agent for designing analytics features for a Discord analy
 
 When given an analytics feature request, you should:
 
-1. **Understand the data** — Read `db/models.py` to understand the available tables and columns (guilds, channels, members, messages).
+1. **Understand the data** — Read `db/models.py` to understand the available tables and columns (channels, members, messages).
 
 2. **Design the SQL query** — Write the SQLAlchemy async query that extracts the needed analytics. Use patterns consistent with the project:
    - Async sessions via `db.database.async_session`

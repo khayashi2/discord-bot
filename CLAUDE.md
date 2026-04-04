@@ -66,11 +66,11 @@ As a junior developer, I also document why certain decisions were made, how it w
 
 ### Message Listener Cog
 
-The `listener.py` cog uses discord.py's `Cog.listener()` decorator to hook into the `on_message` event. Every non-DM message triggers upserts for the guild, channel, and member, followed by an insert for the message itself. Key choices:
+The `listener.py` cog uses discord.py's `Cog.listener()` decorator to hook into the `on_message` event. Every non-DM, non-bot message triggers upserts for the channel and member, followed by an insert for the message itself. Key choices:
 
 - **Upserts via `ON CONFLICT`** — PostgreSQL's `INSERT ... ON CONFLICT DO UPDATE` keeps metadata fresh (e.g., a user's display name) without failing on duplicates. Messages use `ON CONFLICT DO NOTHING` since message content doesn't change.
 - **Emoji counting with regex** — a compiled regex pattern matches both custom Discord emojis (`<:name:id>`) and standard Unicode emoji ranges, giving us an `emoji_count` column for analytics without a separate parsing step.
-- **Composite primary key on `members`** — `(id, guild_id)` because the same Discord user can be in multiple guilds with different display names and join dates.
+- **Single-server design** — the bot is designed for one server, so there is no `guilds` table. Members use their Discord user ID as the primary key.
 
 ## Coding Standards and Best Practices
 
@@ -80,5 +80,5 @@ Use [PEP-0008](https://peps.python.org/pep-0008/) as a reference for coding prac
 
 - **Always use async sessions**: `async with async_session() as session` — never use synchronous `Session()`
 - **Use `select()` over `session.query()`**: Follow SQLAlchemy 2.0 style with `select(Model).where(...)` instead of the legacy `session.query(Model).filter(...)` pattern
-- **Upserts use raw `insert()` + `on_conflict_do_update()`**: For guilds, channels, and members, use PostgreSQL's native `ON CONFLICT` via SQLAlchemy's `insert()` dialect, not ORM merge
+- **Upserts use raw `insert()` + `on_conflict_do_update()`**: For channels and members, use PostgreSQL's native `ON CONFLICT` via SQLAlchemy's `insert()` dialect, not ORM merge
 - **Environment variables via `config.py`**: All settings flow through `config.py` — never read `os.environ` directly in bot or dashboard code

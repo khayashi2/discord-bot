@@ -13,7 +13,7 @@ A Discord bot that tracks server activity and displays fun analytics on a web da
 ## Features
 
 - **Live Message Tracking** — the bot listens to every message in your server and stores it in PostgreSQL (content, author, channel, emoji count, attachments, and more)
-- **Upsert Strategy** — guilds, channels, and members are automatically upserted so metadata stays fresh without duplicates
+- **Upsert Strategy** — channels and members are automatically upserted so metadata stays fresh without duplicates
 - **Historical Backfill** — a one-off script can ingest past messages from channel history
 - **Web Dashboard** — a FastAPI-powered dashboard to visualize analytics (work in progress)
 
@@ -55,7 +55,7 @@ Build the API endpoints and frontend to visualize the trends.
    cp .env.example .env
    ```
 
-2. Fill in your `.env` with your Discord bot token and guild ID.
+2. Fill in your `.env` with your Discord bot token.
 
 3. Start all services:
 
@@ -124,21 +124,13 @@ This section documents the "why" behind key decisions — useful context if you'
 
 **Consider:** This means the database will grow faster and stores potentially sensitive text. In a production bot you'd want to think about data retention policies and user privacy. For a portfolio project, this trade-off is worth the flexibility.
 
-### Upserts for Guilds, Channels, and Members
+### Upserts for Channels and Members
 
-**What:** Every time a message arrives, the bot upserts (insert-or-update) the guild, channel, and member before inserting the message.
+**What:** Every time a message arrives, the bot upserts (insert-or-update) the channel and member before inserting the message.
 
-**Why:** Discord metadata changes constantly — users update display names, channels get renamed, servers change icons. Upserting on every message keeps your local data fresh without needing a separate sync job. Messages themselves use `ON CONFLICT DO NOTHING` since their content doesn't change after creation.
+**Why:** Discord metadata changes constantly — users update display names, channels get renamed. Upserting on every message keeps your local data fresh without needing a separate sync job. Messages themselves use `ON CONFLICT DO NOTHING` since their content doesn't change after creation.
 
 **Consider:** This adds a few extra queries per message. At small scale it's negligible. If you were handling thousands of messages per second, you'd batch writes or use a queue. For a single-server bot, simplicity wins.
-
-### Composite Primary Key on Members
-
-**What:** The `members` table uses `(id, guild_id)` as its primary key instead of just the Discord user ID.
-
-**Why:** The same Discord user can be in multiple servers with different display names, avatars, and join dates. A composite key lets you track per-server member data accurately.
-
-**Consider:** This means foreign keys pointing to members (like on messages) also need both columns. It's a bit more work in queries, but it correctly models the relationship.
 
 ### Emoji Counting with Regex
 
