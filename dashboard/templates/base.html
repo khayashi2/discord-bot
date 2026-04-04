@@ -28,9 +28,28 @@
             background: var(--bg-secondary);
             padding: 1rem 2rem;
             border-bottom: 2px solid var(--accent);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
 
         nav h1 { font-size: 1.4rem; }
+
+        .nav-links {
+            display: flex;
+            gap: 1.5rem;
+        }
+
+        .nav-links a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.95rem;
+            transition: color 0.2s;
+        }
+
+        .nav-links a:hover {
+            color: var(--accent);
+        }
 
         .container {
             max-width: 1200px;
@@ -120,6 +139,10 @@
 <body>
     <nav>
         <h1>Discord Analytics Dashboard</h1>
+        <div class="nav-links">
+            <a href="/">Dashboard</a>
+            <a href="/user">User Stats</a>
+        </div>
     </nav>
     <div class="container">
         {% block content %}{% endblock %}

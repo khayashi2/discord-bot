@@ -1,0 +1,33 @@
+# Profanity word list for the Discord Analytics Dashboard.
+# One word per line. Lines starting with '#' are comments.
+# Add or remove words as needed for your server.
+
+ass
+asshole
+bastard
+bitch
+bullshit
+cock
+crap
+cunt
+damn
+dick
+douche
+dumbass
+fuck
+fucking
+goddam
+goddamn
+hell
+jackass
+motherfucker
+piss
+prick
+shit
+shitty
+slut
+stfu
+twat
+wanker
+whore
+wtf
