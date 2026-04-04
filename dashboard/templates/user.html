@@ -1,37 +1,7 @@
 {% extends "base.html" %}
 
 {% block extra_head %}
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2/dist/css/tom-select.css">
 <style>
-    /* Tom Select dark theme overrides */
-    .ts-wrapper .ts-control {
-        background: var(--bg-card);
-        color: var(--text-primary);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 8px;
-        padding: 0.6rem 0.75rem;
-    }
-    .ts-wrapper .ts-control input { color: var(--text-primary); }
-    .ts-wrapper .ts-control input::placeholder { color: var(--text-secondary); }
-    .ts-dropdown {
-        background: var(--bg-card);
-        color: var(--text-primary);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 8px;
-        margin-top: 4px;
-    }
-    .ts-dropdown .option {
-        padding: 0.5rem 0.75rem;
-    }
-    .ts-dropdown .option:hover,
-    .ts-dropdown .active {
-        background: var(--accent);
-        color: #fff;
-    }
-    .ts-wrapper.focus .ts-control {
-        border-color: var(--accent);
-        box-shadow: 0 0 0 2px rgba(233, 69, 96, 0.25);
-    }
     /* Range picker (button variant for client-side filtering) */
     .range-picker {
         display: flex;
@@ -104,6 +74,19 @@
         <button data-range="90d">90 Days</button>
         <button data-range="" class="active">All Time</button>
     </div>
+    <!-- Custom view block -->
+    <div class="card" id="user-custom-block">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h2 style="margin-bottom: 0;">Custom View</h2>
+            <select id="user-custom-viz-select" style="width: 220px;">
+                <option value="">Choose a visualization...</option>
+            </select>
+        </div>
+        <div id="user-custom-viz-container">
+            <p class="empty-state">Select a visualization above.</p>
+        </div>
+    </div>
+
     <div class="stats-row">
         <div class="stat-card">
             <div class="stat-value" id="user-display-name" style="font-size: 1.4rem;">--</div>
@@ -184,6 +167,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="https://cdn.jsdelivr.net/npm/tom-select@2/dist/js/tom-select.complete.min.js"></script>
 <script src="/static/user.js"></script>
 {% endblock %}

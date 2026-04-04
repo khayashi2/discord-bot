@@ -23,14 +23,20 @@ Chart.defaults.color = COLORS.text;
 Chart.defaults.borderColor = COLORS.grid;
 Chart.defaults.plugins.legend.display = false;
 
+/* All parsed data, shared across render functions and the custom block */
+let allData = {};
+
+/* Track Chart.js instance in the custom block for cleanup */
+let customChartInstance = null;
+
 /**
  * Render a horizontal bar chart for top users.
  */
 function renderTopUsers(canvasId, data) {
     const canvas = document.getElementById(canvasId);
-    if (!canvas || !data.length) return;
+    if (!canvas || !data.length) return null;
 
-    new Chart(canvas, {
+    return new Chart(canvas, {
         type: "bar",
         data: {
             labels: data.map(d => d.display_name),
@@ -58,9 +64,9 @@ function renderTopUsers(canvasId, data) {
  */
 function renderActivity(canvasId, data) {
     const canvas = document.getElementById(canvasId);
-    if (!canvas || !data.length) return;
+    if (!canvas || !data.length) return null;
 
-    new Chart(canvas, {
+    return new Chart(canvas, {
         type: "line",
         data: {
             labels: data.map(d => d.day),
@@ -94,9 +100,9 @@ function renderActivity(canvasId, data) {
  */
 function renderTopWords(canvasId, data) {
     const canvas = document.getElementById(canvasId);
-    if (!canvas || !data.length) return;
+    if (!canvas || !data.length) return null;
 
-    new Chart(canvas, {
+    return new Chart(canvas, {
         type: "bar",
         data: {
             labels: data.map(d => d.word),
@@ -127,9 +133,9 @@ function renderTopWords(canvasId, data) {
  */
 function renderProfanity(canvasId, data) {
     const canvas = document.getElementById(canvasId);
-    if (!canvas || !data.length) return;
+    if (!canvas || !data.length) return null;
 
-    new Chart(canvas, {
+    return new Chart(canvas, {
         type: "bar",
         data: {
             labels: data.map(d => d.display_name),
@@ -157,10 +163,11 @@ function renderProfanity(canvasId, data) {
  */
 function renderHeatmap(containerId, data) {
     const container = document.getElementById(containerId);
-    if (!container || !data.length) return;
+    if (!container || !data.length) return null;
+
+    container.innerHTML = "";
 
     const dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    // Build lookup: grid[dow][hour] = count
     const grid = {};
     let maxCount = 0;
     for (const d of data) {
@@ -169,12 +176,10 @@ function renderHeatmap(containerId, data) {
         if (d.count > maxCount) maxCount = d.count;
     }
 
-    // Top-left empty corner
     const corner = document.createElement("div");
     corner.className = "heatmap-label";
     container.appendChild(corner);
 
-    // Hour labels across top
     for (let h = 0; h < 24; h++) {
         const label = document.createElement("div");
         label.className = "heatmap-label";
@@ -182,7 +187,6 @@ function renderHeatmap(containerId, data) {
         container.appendChild(label);
     }
 
-    // Rows: reorder to Mon-Sun (1,2,3,4,5,6,0)
     const dowOrder = [1, 2, 3, 4, 5, 6, 0];
     for (const dow of dowOrder) {
         const rowLabel = document.createElement("div");
@@ -195,7 +199,6 @@ function renderHeatmap(containerId, data) {
             cell.className = "heatmap-cell";
             const count = (grid[dow] && grid[dow][h]) || 0;
             const intensity = maxCount > 0 ? count / maxCount : 0;
-            // Interpolate from transparent dark to accent color
             const r = Math.round(233 * intensity);
             const g = Math.round(69 * intensity);
             const b = Math.round(96 * intensity);
@@ -204,6 +207,7 @@ function renderHeatmap(containerId, data) {
             container.appendChild(cell);
         }
     }
+    return null;
 }
 
 /**
@@ -211,9 +215,9 @@ function renderHeatmap(containerId, data) {
  */
 function renderVocabularyDiversity(canvasId, data) {
     const canvas = document.getElementById(canvasId);
-    if (!canvas || !data.length) return;
+    if (!canvas || !data.length) return null;
 
-    new Chart(canvas, {
+    return new Chart(canvas, {
         type: "bar",
         data: {
             labels: data.map(d => d.display_name),
@@ -243,9 +247,9 @@ function renderVocabularyDiversity(canvasId, data) {
  */
 function renderPeakHours(canvasId, data) {
     const canvas = document.getElementById(canvasId);
-    if (!canvas || !data.length) return;
+    if (!canvas || !data.length) return null;
 
-    new Chart(canvas, {
+    return new Chart(canvas, {
         type: "bar",
         data: {
             labels: data.map(d => `${d.hour}:00`),
@@ -276,9 +280,9 @@ function renderPeakHours(canvasId, data) {
  */
 function renderReactionTime(canvasId, data) {
     const canvas = document.getElementById(canvasId);
-    if (!canvas || !data.length) return;
+    if (!canvas || !data.length) return null;
 
-    new Chart(canvas, {
+    return new Chart(canvas, {
         type: "bar",
         data: {
             labels: data.map(d => d.display_name),
@@ -301,25 +305,336 @@ function renderReactionTime(canvasId, data) {
     });
 }
 
+/**
+ * Render a line chart for server growth (unique active users per day).
+ */
+function renderGrowthTimeline(canvasId, data) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas || !data.length) return null;
+
+    return new Chart(canvas, {
+        type: "line",
+        data: {
+            labels: data.map(d => d.day),
+            datasets: [{
+                data: data.map(d => d.unique_users),
+                borderColor: "#00b4d8",
+                backgroundColor: "rgba(0, 180, 216, 0.1)",
+                fill: true,
+                tension: 0.3,
+                pointRadius: 2,
+            }],
+        },
+        options: {
+            scales: {
+                x: {
+                    grid: { display: false },
+                    ticks: { maxTicksLimit: 10 },
+                },
+                y: {
+                    beginAtZero: true,
+                    grid: { color: COLORS.grid },
+                    title: { display: true, text: "Unique Users", color: COLORS.text },
+                },
+            },
+        },
+    });
+}
+
+/**
+ * Render a word cloud using wordcloud2.js.
+ */
+function renderWordCloud(canvasId, data) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas || !data.length) return null;
+
+    const maxCount = Math.max(...data.map(d => d.count));
+    const list = data.map(d => [d.word, Math.max((d.count / maxCount) * 64, 12)]);
+
+    // Defer rendering so the browser finishes layout (needed for dynamic containers)
+    requestAnimationFrame(() => {
+        const parent = canvas.parentElement;
+        const width = parent.clientWidth - 48; // account for card padding
+        canvas.width = width > 0 ? width : 700;
+        canvas.height = 350;
+
+        WordCloud(canvas, {
+            list: list,
+            gridSize: 8,
+            weightFactor: 1,
+            color: function () {
+                return COLORS.bars[Math.floor(Math.random() * COLORS.bars.length)];
+            },
+            backgroundColor: "transparent",
+            fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+            rotateRatio: 0.3,
+        });
+    });
+    return null;
+}
+
+/**
+ * Render a dual-line chart for sentiment trend.
+ */
+function renderSentimentTrend(canvasId, data) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas || !data.length) return null;
+
+    return new Chart(canvas, {
+        type: "line",
+        data: {
+            labels: data.map(d => d.day),
+            datasets: [
+                {
+                    label: "Positive",
+                    data: data.map(d => d.positive),
+                    borderColor: "#90be6d",
+                    backgroundColor: "rgba(144, 190, 109, 0.1)",
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 2,
+                },
+                {
+                    label: "Negative",
+                    data: data.map(d => d.negative),
+                    borderColor: COLORS.accent,
+                    backgroundColor: "rgba(233, 69, 96, 0.1)",
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 2,
+                },
+            ],
+        },
+        options: {
+            plugins: {
+                legend: { display: true, labels: { color: COLORS.text } },
+            },
+            scales: {
+                x: {
+                    grid: { display: false },
+                    ticks: { maxTicksLimit: 10 },
+                },
+                y: {
+                    beginAtZero: true,
+                    grid: { color: COLORS.grid },
+                    title: { display: true, text: "Keyword Hits", color: COLORS.text },
+                },
+            },
+        },
+    });
+}
+
+/**
+ * Render a conversation network as an adjacency heatmap grid.
+ */
+function renderConversationNetwork(containerId, data) {
+    const container = document.getElementById(containerId);
+    if (!container || !data.length) return null;
+
+    container.innerHTML = "";
+
+    // Collect unique users
+    const userSet = new Set();
+    for (const d of data) {
+        userSet.add(d.from_user);
+        userSet.add(d.to_user);
+    }
+    const users = Array.from(userSet);
+
+    // Build lookup
+    const lookup = {};
+    let maxCount = 0;
+    for (const d of data) {
+        const key = `${d.from_user}|${d.to_user}`;
+        lookup[key] = d.count;
+        if (d.count > maxCount) maxCount = d.count;
+    }
+
+    // Build grid table
+    const table = document.createElement("table");
+    table.style.cssText = "width:100%; border-collapse:collapse; font-size:0.75rem;";
+
+    // Header row
+    const thead = document.createElement("thead");
+    const headerRow = document.createElement("tr");
+    const emptyTh = document.createElement("th");
+    emptyTh.style.cssText = "padding:4px; min-width:60px;";
+    headerRow.appendChild(emptyTh);
+    for (const user of users) {
+        const th = document.createElement("th");
+        th.textContent = user.length > 8 ? user.substring(0, 7) + "\u2026" : user;
+        th.title = user;
+        th.style.cssText = "padding:4px; color:var(--text-secondary); font-weight:600; text-align:center; writing-mode:vertical-lr; transform:rotate(180deg); max-width:32px;";
+        headerRow.appendChild(th);
+    }
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    // Body rows
+    const tbody = document.createElement("tbody");
+    for (const fromUser of users) {
+        const row = document.createElement("tr");
+        const labelCell = document.createElement("td");
+        labelCell.textContent = fromUser.length > 10 ? fromUser.substring(0, 9) + "\u2026" : fromUser;
+        labelCell.title = fromUser;
+        labelCell.style.cssText = "padding:4px; color:var(--text-secondary); font-weight:600; white-space:nowrap;";
+        row.appendChild(labelCell);
+
+        for (const toUser of users) {
+            const cell = document.createElement("td");
+            const count = lookup[`${fromUser}|${toUser}`] || 0;
+            const intensity = maxCount > 0 ? count / maxCount : 0;
+            const r = Math.round(233 * intensity);
+            const g = Math.round(69 * intensity);
+            const b = Math.round(96 * intensity);
+            cell.style.cssText = `padding:4px; text-align:center; min-width:28px; min-height:28px; border-radius:3px; background:rgba(${r},${g},${b},${Math.max(intensity, 0.05)});`;
+            if (count > 0) {
+                cell.textContent = count;
+                cell.style.color = intensity > 0.5 ? "#fff" : "var(--text-secondary)";
+                cell.style.fontSize = "0.7rem";
+            }
+            cell.title = `${fromUser} \u2192 ${toUser}: ${count} replies`;
+            row.appendChild(cell);
+        }
+        tbody.appendChild(row);
+    }
+    table.appendChild(tbody);
+    container.appendChild(table);
+    return null;
+}
+
+/* ─── Conversation flow view toggle ─── */
+function toggleConvView(view) {
+    const networkEl = document.getElementById("networkGrid");
+    const tableEl = document.getElementById("convFlowTable");
+    const networkBtn = document.getElementById("network-btn");
+    const tableBtn = document.getElementById("table-btn");
+    if (!networkEl || !tableEl) return;
+
+    if (view === "network") {
+        networkEl.style.display = "";
+        tableEl.style.display = "none";
+        networkBtn.classList.add("active");
+        tableBtn.classList.remove("active");
+    } else {
+        networkEl.style.display = "none";
+        tableEl.style.display = "";
+        networkBtn.classList.remove("active");
+        tableBtn.classList.add("active");
+    }
+}
+
+/* ─── Custom View Block (VIZ_REGISTRY) ─── */
+const VIZ_REGISTRY = {
+    "word-cloud":     { label: "Word Cloud",           dataKey: "wordCloud",         render: renderWordCloud,           type: "canvas" },
+    "growth":         { label: "Server Growth",        dataKey: "growth",            render: renderGrowthTimeline,      type: "canvas" },
+    "sentiment":      { label: "Sentiment Trend",      dataKey: "sentiment",         render: renderSentimentTrend,      type: "canvas" },
+    "top-words":      { label: "Top Words",            dataKey: "topWords",          render: renderTopWords,            type: "canvas" },
+    "peak-hours":     { label: "Peak Hours",           dataKey: "peakHours",         render: renderPeakHours,           type: "canvas" },
+    "vocabulary":     { label: "Vocabulary Diversity",  dataKey: "vocabulary",        render: renderVocabularyDiversity, type: "canvas" },
+    "profanity":      { label: "Profanity Board",      dataKey: "profanity",         render: renderProfanity,           type: "canvas" },
+    "reaction-time":  { label: "Reaction Time Kings",  dataKey: "reactionTime",      render: renderReactionTime,        type: "canvas" },
+    "top-users":      { label: "Top Users",            dataKey: "topUsers",          render: renderTopUsers,            type: "canvas" },
+    "heatmap":        { label: "Activity Heatmap",     dataKey: "heatmap",           render: renderHeatmap,             type: "div" },
+    "network":        { label: "Who Talks to Whom",    dataKey: "conversationFlow",  render: renderConversationNetwork, type: "div" },
+};
+
+function initCustomBlock() {
+    const selectEl = document.getElementById("custom-viz-select");
+    const container = document.getElementById("custom-viz-container");
+    if (!selectEl || !container) return;
+
+    // Populate options
+    for (const [key, viz] of Object.entries(VIZ_REGISTRY)) {
+        const opt = document.createElement("option");
+        opt.value = key;
+        opt.textContent = viz.label;
+        selectEl.appendChild(opt);
+    }
+
+    // Init Tom Select
+    const ts = new TomSelect(selectEl, {
+        allowEmptyOption: true,
+        placeholder: "Choose a visualization...",
+    });
+
+    // Restore saved preference
+    const saved = localStorage.getItem("dashboard-custom-viz") || "word-cloud";
+    ts.setValue(saved, true);
+    renderCustomViz(saved, container);
+
+    ts.on("change", (value) => {
+        if (!value) return;
+        localStorage.setItem("dashboard-custom-viz", value);
+        renderCustomViz(value, container);
+    });
+}
+
+function renderCustomViz(key, container) {
+    // Cleanup previous
+    if (customChartInstance) {
+        customChartInstance.destroy();
+        customChartInstance = null;
+    }
+    container.innerHTML = "";
+
+    const viz = VIZ_REGISTRY[key];
+    if (!viz) return;
+
+    const data = allData[viz.dataKey];
+    if (!data || (Array.isArray(data) && data.length === 0)) {
+        container.innerHTML = '<p class="empty-state">No data available for this visualization.</p>';
+        return;
+    }
+
+    const elId = "custom-viz-" + key;
+    if (viz.type === "canvas") {
+        const canvas = document.createElement("canvas");
+        canvas.id = elId;
+        container.appendChild(canvas);
+        customChartInstance = viz.render(elId, data);
+    } else {
+        const div = document.createElement("div");
+        div.id = elId;
+        if (key === "heatmap") div.className = "heatmap-grid";
+        container.appendChild(div);
+        viz.render(elId, data);
+    }
+}
+
 /* Initialize charts once the DOM is ready */
 document.addEventListener("DOMContentLoaded", () => {
-    /* Parse data from HTML data attributes (avoids inline script XSS) */
     const dataEl = document.getElementById("chart-data");
-    const topUsersData = JSON.parse(dataEl.dataset.topUsers);
-    const activityData = JSON.parse(dataEl.dataset.activity);
-    const topWordsData = JSON.parse(dataEl.dataset.topWords);
-    const profanityData = JSON.parse(dataEl.dataset.profanity);
-    const heatmapData = JSON.parse(dataEl.dataset.heatmap);
-    const vocabularyData = JSON.parse(dataEl.dataset.vocabulary);
-    const peakHoursData = JSON.parse(dataEl.dataset.peakHours);
-    const reactionTimeData = JSON.parse(dataEl.dataset.reactionTime);
 
-    renderTopUsers("topUsersChart", topUsersData);
-    renderActivity("activityChart", activityData);
-    renderTopWords("topWordsChart", topWordsData);
-    renderProfanity("profanityChart", profanityData);
-    renderHeatmap("heatmapGrid", heatmapData);
-    renderVocabularyDiversity("vocabularyChart", vocabularyData);
-    renderPeakHours("peakHoursChart", peakHoursData);
-    renderReactionTime("reactionTimeChart", reactionTimeData);
+    allData = {
+        topUsers:         JSON.parse(dataEl.dataset.topUsers),
+        activity:         JSON.parse(dataEl.dataset.activity),
+        topWords:         JSON.parse(dataEl.dataset.topWords),
+        profanity:        JSON.parse(dataEl.dataset.profanity),
+        heatmap:          JSON.parse(dataEl.dataset.heatmap),
+        vocabulary:       JSON.parse(dataEl.dataset.vocabulary),
+        peakHours:        JSON.parse(dataEl.dataset.peakHours),
+        reactionTime:     JSON.parse(dataEl.dataset.reactionTime),
+        growth:           JSON.parse(dataEl.dataset.growth),
+        wordCloud:        JSON.parse(dataEl.dataset.wordCloud),
+        sentiment:        JSON.parse(dataEl.dataset.sentiment),
+        conversationFlow: JSON.parse(dataEl.dataset.conversationFlow),
+    };
+
+    /* Render static charts */
+    renderTopUsers("topUsersChart", allData.topUsers);
+    renderActivity("activityChart", allData.activity);
+    renderTopWords("topWordsChart", allData.topWords);
+    renderProfanity("profanityChart", allData.profanity);
+    renderHeatmap("heatmapGrid", allData.heatmap);
+    renderVocabularyDiversity("vocabularyChart", allData.vocabulary);
+    renderPeakHours("peakHoursChart", allData.peakHours);
+    renderReactionTime("reactionTimeChart", allData.reactionTime);
+    renderGrowthTimeline("growthChart", allData.growth);
+    renderWordCloud("wordCloudCanvas", allData.wordCloud);
+    renderSentimentTrend("sentimentChart", allData.sentiment);
+    renderConversationNetwork("networkGrid", allData.conversationFlow);
+
+    /* Initialize custom view block */
+    initCustomBlock();
 });
