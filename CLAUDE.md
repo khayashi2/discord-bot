@@ -46,12 +46,17 @@ A Discord bot that tracks server activity and displays fun analytics (top words,
 - Async database access via asyncpg + SQLAlchemy async sessions
 - Dashboard analytics split into `dashboard/queries.py` — each query function returns plain dicts so the route handler stays thin
 - Time-filtered queries — every main query accepts an optional `after` datetime; `cutoff_from_range()` converts `7d`/`30d`/`90d` to a cutoff timestamp
-- Per-user stats via JSON API — `/api/user/{member_id}` returns user analytics as JSON, rendered client-side by `dashboard/static/user.js`
+- Per-user stats via JSON API — `/api/user/{member_id}?range=` returns user analytics as JSON, rendered client-side by `dashboard/static/user.js`; supports the same `7d`/`30d`/`90d` time filtering as the main dashboard
 - Profanity leaderboard — configurable word list loaded from `config/profanity.txt`, cached in `settings.load_profanity_words()`; collapsible word reference on landing page; per-user top profanity words on user stats page
-- Activity heatmap — `get_activity_heatmap()` uses PostgreSQL `EXTRACT(dow/hour)` to group messages by day-of-week and hour; rendered as a CSS grid (not Chart.js) with color intensity
+- Activity heatmap — `get_activity_heatmap()` uses PostgreSQL `EXTRACT(dow/hour FROM created_at AT TIME ZONE 'US/Pacific')` to group messages by day-of-week and hour in Pacific Time; rendered as a CSS grid (not Chart.js) with color intensity
 - Awards & superlatives — `get_awards()` runs 7 targeted sub-queries (Night Owl, Early Bird, Emoji Monarch, Novelist, Chatterbox, Editor, Attachment Pro); server-rendered badge grid, no JS
 - Vocabulary diversity — `get_vocabulary_diversity()` computes type-token ratio per user over bounded message sets; horizontal bar chart via Chart.js
 - Conversation flow — `get_conversation_flow()` identifies consecutive-message reply pairs within a 5-minute gap in the same channel; server-rendered HTML table
+- Peak hours — `get_peak_hours()` uses `EXTRACT(hour FROM created_at AT TIME ZONE 'US/Pacific')` to group messages by hour of day (0–23) in Pacific Time; bar chart via Chart.js, fills in zero-count hours for a complete 24-bar display
+- Reaction time kings — `get_reaction_time_kings()` reuses the consecutive-message pairing logic from conversation flow to compute average response times per user; minimum 3 responses to qualify
+- Per-user peak hours — `get_user_peak_hours()` mirrors the server-wide peak hours but filtered by `member_id`; uses Pacific Time via `func.timezone("US/Pacific", ...)`
+- Per-user vocabulary diversity — `get_user_vocabulary_diversity()` computes TTR for a single user; returns `{"ttr", "unique_words", "total_words"}`; minimum 10 words threshold (returns `total_words: 0` when under threshold)
+- Sticky user header — `IntersectionObserver` on the user selector card triggers a fixed header showing the selected user's display name when scrolling past the selector
 - Removed panels — Message Lengths and Most Active Channels were removed from both the landing page and user page to focus on more engaging analytics. The query functions (`get_message_length_stats`, `get_top_channels`, `get_user_message_length_distribution`, `get_user_top_channels`) still exist in `queries.py` but are no longer called from `app.py`
 
 ## Running Locally
@@ -126,10 +131,10 @@ The `get_profanity_leaderboard()` query scans recent messages and counts profani
 
 ### Activity Heatmap
 
-The `get_activity_heatmap()` query uses PostgreSQL's `EXTRACT(dow)` and `EXTRACT(hour)` to bucket messages by day-of-week and hour. Key choices:
+The `get_activity_heatmap()` query uses PostgreSQL's `EXTRACT(dow)` and `EXTRACT(hour)` on timestamps converted to Pacific Time via `func.timezone("US/Pacific", Message.created_at)`. Key choices:
 
 - **Pure CSS grid, not Chart.js** — a 7×24 heatmap maps naturally to an HTML grid with colored cells. Chart.js doesn't have a native heatmap type, so using DOM manipulation avoids pulling in a chart plugin. Color intensity is linearly interpolated from the accent color based on `count / maxCount`.
-- **UTC hours** — all timestamps are stored in UTC, so the heatmap shows UTC hours. The heading includes a "(UTC)" label. Converting to local time would require knowing the server's timezone, which isn't tracked.
+- **Pacific Time via `AT TIME ZONE`** — timestamps are stored in UTC but displayed in Pacific Time. PostgreSQL's `timezone()` function handles PST/PDT transitions automatically per-row (each timestamp is converted based on its own date). Both `dow` and `hour` must be extracted from the converted timestamp — extracting only the hour would produce incorrect day-of-week for messages near midnight.
 - **Day ordering** — PostgreSQL `EXTRACT(dow)` returns 0=Sunday, but the grid renders Monday first (order: 1,2,3,4,5,6,0) for a more conventional week layout.
 
 ### Awards & Superlatives
@@ -156,6 +161,22 @@ The `get_conversation_flow()` query identifies reply pairs by finding consecutiv
 - **Chronological ordering** — messages are ordered by `channel_id, created_at ASC` so that iterating consecutive pairs correctly identifies who spoke first (the "prompt") and who responded (the "reply").
 - **Python-side pairing** — the pairing logic runs in Python over 10,000 recent messages. SQL window functions (LAG) could do this in the database, but the Python approach is simpler and matches the project's convention for text analytics.
 
+### Peak Hours
+
+The `get_peak_hours()` query groups messages by hour of day using `EXTRACT(hour FROM created_at AT TIME ZONE 'US/Pacific')`. Key choices:
+
+- **Simple aggregation** — a single `GROUP BY hour` query returns counts for each hour. Hours with no messages are filled in with zero counts in Python so the Chart.js bar chart always renders all 24 bars.
+- **Complements the heatmap** — the heatmap shows a 7×24 grid (day × hour), while peak hours collapses the day dimension for a simpler "what time is the server busiest?" view. Both use `EXTRACT` on the same Pacific Time-converted timestamp.
+- **Pacific Time** — consistent with the heatmap, hours are in Pacific Time. PostgreSQL handles DST transitions per-row.
+
+### Reaction Time Kings
+
+The `get_reaction_time_kings()` query ranks users by average response time. Key choices:
+
+- **Reuses consecutive-message pairing** — the same logic as `get_conversation_flow()`: consecutive messages in the same channel from different authors within a 5-minute window. Instead of counting pairs, it computes the time delta in seconds and averages per responder.
+- **Minimum threshold** — users need at least 3 qualifying responses to appear, preventing outliers from a single fast reply.
+- **Bounded scan** — processes up to 10,000 recent messages ordered by `(channel_id, created_at)`. The docstring notes this may under-represent users active in higher-numbered channels, a known trade-off for keeping the query fast.
+
 ### Per-User Profanity Words
 
 The `get_user_top_profanity_words()` query returns the most-used profanity words for a specific user. Key choices:
@@ -163,6 +184,36 @@ The `get_user_top_profanity_words()` query returns the most-used profanity words
 - **Reuses existing infrastructure** — the same `_clean_content()`, `WORD_PATTERN`, and `settings.load_profanity_words()` used by the server-wide profanity leaderboard. The only difference is filtering by `member_id`.
 - **Styled list rendering** — the user page renders profanity words as a styled list (matching the emoji list pattern) rather than a chart, since there are typically only 5 items.
 - **Collapsible word reference** — the landing page includes a `<details>/<summary>` element inside the Profanity Leaderboard card that reveals the full word list. This uses zero JavaScript and degrades gracefully.
+
+### User Page Time Filtering
+
+The `/api/user/{member_id}` endpoint now accepts an optional `?range=7d|30d|90d` parameter, reusing the same `cutoff_from_range()` and `after` pattern from the main dashboard. Key choices:
+
+- **Client-side range picker** — the user page uses `<button>` elements with JavaScript click handlers instead of `<a>` tags with page reloads, since the user page already works client-side (Tom Select dropdown + fetch API). The selected range is stored in a JS variable and included in every API call.
+- **Range persists across user switches** — the time range is a user preference, not tied to a specific member. Switching from Alice to Bob keeps the same 7d/30d/90d filter applied.
+- **All user query functions accept `after`** — `get_user_top_words`, `get_user_message_count`, `get_user_activity_over_time`, `get_user_emoji_stats`, `get_user_top_profanity_words`, `get_user_peak_hours`, and `get_user_vocabulary_diversity` all accept `after: datetime | None = None`. The pattern is identical to the server-wide queries.
+
+### Sticky User Header
+
+The user page displays a fixed header with the selected user's display name when scrolling past the selector card. Key choices:
+
+- **IntersectionObserver over scroll events** — `IntersectionObserver` is more performant than a scroll event listener. The browser natively tracks when the selector card enters/leaves the viewport, with no debouncing or throttling needed.
+- **CSS transition for smooth appear/disappear** — the header uses `opacity` and `transform: translateY` transitions rather than an abrupt `display: none` toggle. The `pointer-events: none` property prevents it from interfering with clicks when invisible.
+
+### Per-User Peak Hours
+
+The `get_user_peak_hours()` query mirrors `get_peak_hours()` but filters by `member_id`. Key choices:
+
+- **Pacific Time from the start** — uses `func.timezone("US/Pacific", Message.created_at)` consistent with the server-wide version.
+- **Same 24-bar fill pattern** — hours with no messages are filled with zero counts so the Chart.js bar chart always shows all 24 bars.
+
+### Per-User Vocabulary Diversity
+
+The `get_user_vocabulary_diversity()` query computes TTR for a single user. Key choices:
+
+- **Stat cards, not a chart** — since it's a single user's data (not a ranking), the panel shows three stat cards (TTR Score, Unique Words, Total Words) rather than a bar chart with one bar.
+- **Under-threshold handling** — returns `total_words: 0` when fewer than 10 words are found. The client checks `total_words > 0` to decide whether to show stats or the empty state. This keeps the threshold logic coupled between server and client via a single zero/non-zero contract.
+- **TTR description on both pages** — the landing page and user page both display "Type-Token Ratio (TTR) = unique words / total words. Higher ratio = more diverse vocabulary." to help users understand the metric.
 
 ## Coding Standards and Best Practices
 

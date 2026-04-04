@@ -200,7 +200,7 @@ function renderHeatmap(containerId, data) {
             const g = Math.round(69 * intensity);
             const b = Math.round(96 * intensity);
             cell.style.backgroundColor = `rgba(${r}, ${g}, ${b}, ${Math.max(intensity, 0.08)})`;
-            cell.title = `${dayLabels[dow]} ${h}:00 — ${count} messages`;
+            cell.title = `${dayLabels[dow]} ${h}:00 PT — ${count} messages`;
             container.appendChild(cell);
         }
     }
@@ -259,7 +259,7 @@ function renderPeakHours(canvasId, data) {
             scales: {
                 x: {
                     grid: { display: false },
-                    title: { display: true, text: "Hour (UTC)", color: COLORS.text },
+                    title: { display: true, text: "Hour (Pacific)", color: COLORS.text },
                 },
                 y: {
                     beginAtZero: true,
