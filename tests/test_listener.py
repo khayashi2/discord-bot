@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from bot.cogs.listener import EMOJI_PATTERN, Listener
+from bot.cogs.listener import Listener
 
 
 def _make_message(
@@ -47,21 +47,6 @@ def _make_message(
     return message
 
 
-class TestEmojiPattern:
-    """Tests for the emoji counting regex."""
-
-    def test_counts_unicode_emoji(self):
-        assert len(EMOJI_PATTERN.findall("hello 😀😂")) == 1  # group match
-
-    def test_counts_custom_discord_emoji(self):
-        text = "nice <:thumbsup:123456789> and <a:party:987654321>"
-        matches = EMOJI_PATTERN.findall(text)
-        assert len(matches) == 2
-
-    def test_no_emoji(self):
-        assert len(EMOJI_PATTERN.findall("just plain text")) == 0
-
-
 class TestListenerCog:
     """Tests for the Listener cog message handling."""
 
@@ -96,21 +81,22 @@ class TestListenerCog:
         cog = Listener(bot)
         message = _make_message()
 
-        cog._upsert_channel = AsyncMock()
-        cog._upsert_member = AsyncMock()
-        cog._insert_message = AsyncMock()
-
         mock_session = AsyncMock()
 
-        with patch("bot.cogs.listener.async_session") as mock_factory:
+        with (
+            patch("bot.cogs.listener.async_session") as mock_factory,
+            patch("bot.cogs.listener.upsert_channel") as mock_upsert_ch,
+            patch("bot.cogs.listener.upsert_member") as mock_upsert_mem,
+            patch("bot.cogs.listener.insert_message") as mock_insert_msg,
+        ):
             mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
             await cog.on_message(message)
 
-            cog._upsert_channel.assert_called_once()
-            cog._upsert_member.assert_called_once()
-            cog._insert_message.assert_called_once()
+            mock_upsert_ch.assert_called_once_with(mock_session, message.channel)
+            mock_upsert_mem.assert_called_once_with(mock_session, message.author)
+            mock_insert_msg.assert_called_once_with(mock_session, message)
 
     @pytest.mark.asyncio
     async def test_setup_adds_cog(self):

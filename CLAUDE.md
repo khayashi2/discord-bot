@@ -31,7 +31,7 @@ A Discord bot that tracks server activity and displays fun analytics (top words,
 
 - `bot/` — Discord bot (discord.py), live message listener
 - `dashboard/` — Web dashboard (FastAPI + Jinja2 + Chart.js)
-- `db/` — Database layer (SQLAlchemy models, Alembic migrations)
+- `db/` — Database layer (SQLAlchemy models, Alembic migrations, shared operations)
 - `scripts/` — One-off scripts (e.g., historical backfill)
 - `tests/` — Test suite (pytest + pytest-asyncio)
 - `config.py` — Centralized settings from environment variables
@@ -40,7 +40,8 @@ A Discord bot that tracks server activity and displays fun analytics (top words,
 ## Key Design Decisions
 
 - Storing full message content (not just metadata) to enable flexible analytics
-- Bot, dashboard, and backfill script are separate entry points sharing the same DB
+- Bot, dashboard, and backfill script are separate entry points sharing the same DB via `db/operations.py`
+- Shared DB operations (`db/operations.py`) — upsert/insert logic extracted so both listener and backfill use identical persistence code
 - PostgreSQL via Docker Compose for all environments
 - Async database access via asyncpg + SQLAlchemy async sessions
 
@@ -71,6 +72,16 @@ The `listener.py` cog uses discord.py's `Cog.listener()` decorator to hook into 
 - **Upserts via `ON CONFLICT`** — PostgreSQL's `INSERT ... ON CONFLICT DO UPDATE` keeps metadata fresh (e.g., a user's display name) without failing on duplicates. Messages use `ON CONFLICT DO NOTHING` since message content doesn't change.
 - **Emoji counting with regex** — a compiled regex pattern matches both custom Discord emojis (`<:name:id>`) and standard Unicode emoji ranges, giving us an `emoji_count` column for analytics without a separate parsing step.
 - **Single-server design** — the bot is designed for one server, so there is no `guilds` table. Members use their Discord user ID as the primary key.
+
+### Historical Backfill Script
+
+The `scripts/backfill.py` script connects as a plain `discord.Client` (not a `commands.Bot`) since it only needs read access to channel history. Key choices:
+
+- **Shared operations via `db/operations.py`** — the same `upsert_channel`, `upsert_member`, and `insert_message` functions are used by both the live listener and the backfill, eliminating code duplication and ensuring consistent persistence logic.
+- **Batched commits (every 500 messages)** — committing periodically bounds memory usage and ensures partial progress is saved. If the script crashes mid-channel, already-committed batches are safe and `ON CONFLICT DO NOTHING` makes re-runs skip duplicates.
+- **Sequential channel iteration** — channels are processed one at a time to avoid compounding Discord API rate limits. discord.py's built-in rate limiter handles throttling transparently.
+- **Per-channel error handling** — `discord.Forbidden` and `discord.HTTPException` are caught per-channel so one inaccessible channel doesn't abort the entire backfill.
+- **Bot messages filtered** — bot-authored messages are skipped during backfill since they don't represent real user activity for analytics.
 
 ## Coding Standards and Best Practices
 
