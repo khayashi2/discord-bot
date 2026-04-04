@@ -1,9 +1,8 @@
 ---
 name: security-check
 description: Scan code for security vulnerabilities — credential leaks, SQL injection, XSS, insecure config, and dependency risks.
-argument-hint: [file-or-directory]
+argument-hint: "<file-or-directory>"
 user-invocable: true
-allowed-tools: Bash Read Grep Glob Agent AskUserQuestion
 ---
 
 # Security Check
@@ -36,7 +35,7 @@ Arguments: `$ARGUMENTS` (optional file or directory path; defaults to full proje
 
    d. **Dependencies (`DEP`)** — Check for:
       - Pinned versions: verify `requirements.txt` pins exact versions (not just `>=`). Unpinned dependencies risk pulling in vulnerable versions.
-      - Known vulnerabilities: run `pip audit` if available, or check for obviously outdated packages.
+      - Known vulnerabilities: check if `pip-audit` is installed (`pip-audit --version`). If available, run `pip-audit -r requirements.txt` and report any findings. If not installed, skip this check and note it as an INFO finding recommending `pip install pip-audit`.
 
    e. **Configuration (`CFG`)** — Check for:
       - Debug mode in production: look for `debug=True` or `DEBUG=True` in app startup code.
