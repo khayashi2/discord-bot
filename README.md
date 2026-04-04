@@ -14,7 +14,7 @@ A Discord bot that tracks server activity and displays fun analytics on a web da
 
 - **Live Message Tracking** — the bot listens to every message in your server and stores it in PostgreSQL (content, author, channel, emoji count, attachments, and more)
 - **Upsert Strategy** — channels and members are automatically upserted so metadata stays fresh without duplicates
-- **Historical Backfill** — a one-off script can ingest past messages from channel history
+- **Historical Backfill** — a one-off script ingests all past messages from every text channel, with batched commits and per-channel error handling
 - **Web Dashboard** — a FastAPI-powered dashboard to visualize analytics (work in progress)
 
 ## Plan
@@ -97,6 +97,7 @@ ruff check .
 ├── db/                   # Database layer
 │   ├── models.py         # SQLAlchemy ORM models
 │   ├── database.py       # Async engine & session
+│   ├── operations.py     # Shared upsert/insert logic (used by listener & backfill)
 │   └── migrations/       # Alembic migrations
 ├── scripts/              # One-off scripts
 │   └── backfill.py       # Historical data ingestion
@@ -139,6 +140,22 @@ This section documents the "why" behind key decisions — useful context if you'
 **Why:** Pre-computing `emoji_count` at insert time means dashboard queries can sort/filter by emoji usage without scanning message content at read time. The regex handles both emoji types in one pass.
 
 **Consider:** Unicode emoji ranges evolve over time — new emoji get added with each Unicode release. The current pattern covers the most common ranges but won't catch every future emoji. For a portfolio project this is a reasonable trade-off; a production bot might use a dedicated emoji library.
+
+### Shared DB Operations Module
+
+**What:** The upsert/insert logic lives in `db/operations.py`, a shared module imported by both the live listener cog and the backfill script.
+
+**Why:** Without this, you'd have identical upsert code in two places. When one changes (e.g., adding a new column), the other could fall out of sync, leading to subtle bugs. Extracting shared logic into a single module means both code paths are guaranteed to behave identically.
+
+**Consider:** The alternative is keeping the logic in the listener and having the backfill import from it — but that creates a dependency from a script to a bot cog, which is architecturally backwards. A neutral `db/` module is the cleanest boundary.
+
+### Historical Backfill Design
+
+**What:** The backfill script connects as a plain `discord.Client`, iterates every text channel, and inserts all historical messages with batched commits (every 500 messages).
+
+**Why:** Batching avoids holding a giant uncommitted transaction in memory. The `ON CONFLICT DO NOTHING` on messages makes the script idempotent — you can safely re-run it after a crash and it picks up where it left off (already-inserted messages are skipped). Bot messages are filtered out since they don't represent real user activity.
+
+**Consider:** The script runs sequentially through channels (no parallelism). This is intentional — parallel channel fetches would compound Discord's rate limits and make error handling harder. For a single server, sequential iteration is simple and reliable. discord.py's built-in rate limiter handles API throttling transparently.
 
 ### Async Database Access
 
