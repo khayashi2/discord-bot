@@ -15,7 +15,10 @@ A Discord bot that tracks server activity and displays fun analytics on a web da
 - **Live Message Tracking** — the bot listens to every message in your server and stores it in PostgreSQL (content, author, channel, emoji count, attachments, and more)
 - **Upsert Strategy** — channels and members are automatically upserted so metadata stays fresh without duplicates
 - **Historical Backfill** — a one-off script ingests all past messages from every text channel, with batched commits and per-channel error handling
-- **Web Dashboard** — a FastAPI-powered analytics dashboard with Chart.js visualizations: overview stats, most active users and channels, 30-day activity trend, top words, emoji usage, and message length distribution
+- **Web Dashboard** — a FastAPI-powered analytics dashboard with Chart.js visualizations: overview stats, most active users and channels, activity trend, top words, emoji usage, profanity leaderboard, and message length distribution
+- **Time-Filtered Analytics** — dashboard supports 7-day, 30-day, and 90-day time range filters so you can view activity over any recent window
+- **User Stats Page** — a dedicated per-user analytics page with a member dropdown; selecting a user fetches their stats via a JSON API and renders charts client-side (top words, activity over time, top channels, emoji usage, message length distribution)
+- **Profanity Leaderboard** — ranks users by profanity usage using a configurable word list (`config/profanity.txt`), with Python-side counting over recent messages
 
 ## Plan
 
@@ -37,7 +40,7 @@ Set up the discord.py bot that listens for new messages and inserts them in real
 
 ### Phase 5 — Dashboard (in progress)
 
-Build the API endpoints and frontend to visualize the trends. The initial dashboard is live with seven analytics panels (overview stats, top users, top channels, activity over time, top words, emoji usage, message length distribution).
+Build the API endpoints and frontend to visualize the trends. The dashboard is live with eight analytics panels (overview stats, top users, top channels, activity over time, top words, emoji usage, profanity leaderboard, message length distribution), time-range filtering (7d/30d/90d), and a dedicated per-user stats page.
 
 ## Getting Started
 
@@ -91,10 +94,15 @@ ruff check .
 │   └── cogs/             # Command extensions
 │       └── listener.py   # Live message listener & DB persistence
 ├── dashboard/            # Web dashboard (FastAPI)
-│   ├── app.py            # Dashboard entry point
+│   ├── app.py            # Dashboard entry point & routes
 │   ├── queries.py        # Analytics queries (top users, words, emoji, etc.)
 │   ├── templates/        # Jinja2 HTML templates
+│   │   ├── base.html     # Shared layout (nav, head, scripts)
+│   │   ├── index.html    # Main dashboard page
+│   │   └── user.html     # Per-user stats page
 │   └── static/           # CSS, JS (Chart.js rendering)
+│       ├── dashboard.js  # Main dashboard charts
+│       └── user.js       # User stats client-side rendering
 ├── db/                   # Database layer
 │   ├── models.py         # SQLAlchemy ORM models
 │   ├── database.py       # Async engine & session
@@ -103,6 +111,8 @@ ruff check .
 ├── scripts/              # One-off scripts
 │   └── backfill.py       # Historical data ingestion
 ├── config.py             # Centralized settings from env vars
+├── config/               # Static configuration files
+│   └── profanity.txt     # Profanity word list for leaderboard
 ├── tests/                # Test suite
 ├── docker-compose.yml    # Service orchestration
 ├── Dockerfile            # Container image
@@ -165,6 +175,30 @@ This section documents the "why" behind key decisions — useful context if you'
 **Why:** Separating queries into their own module keeps `app.py` clean — it only handles routing and template rendering. For word counting and emoji extraction, Python's `Counter` and regex are simpler to write and maintain than equivalent PostgreSQL functions, especially when operating over a bounded set of recent messages (5,000 for words, 2,000 for emoji).
 
 **Consider:** This approach works well at small-to-medium scale. As the dataset grows, pulling thousands of rows into Python becomes slower. The natural next step would be materialized views or PostgreSQL full-text search aggregation for word counts, and a dedicated emoji table for emoji stats. The code includes comments flagging these future optimization points.
+
+### Time-Filtered Dashboard
+
+**What:** Every main dashboard query accepts an optional `after` parameter. The UI offers 7-day, 30-day, and 90-day filter buttons that reload the page with a `?range=` query parameter.
+
+**Why:** All-time stats are interesting, but users often want to see *recent* trends — who's been most active this week, what words are trending this month. Adding a cutoff parameter to each query is a minimal change that unlocks a much more useful dashboard.
+
+**Consider:** The filter is applied server-side — each range selection triggers a full page reload. For a smoother experience you could fetch filtered data via AJAX, but a page reload is simpler and avoids managing client-side state. The `cutoff_from_range()` helper centralizes the range-to-datetime conversion so the route handler stays clean.
+
+### User Stats Page
+
+**What:** A dedicated `/user` page with a member dropdown. Selecting a user calls `/api/user/{member_id}`, which returns per-user analytics as JSON. The client-side JavaScript (`user.js`) renders charts from the response.
+
+**Why:** The main dashboard shows server-wide trends, but users want to see their own stats. A JSON API + client-side rendering avoids a full page reload on every user switch and lets you reuse the same Chart.js patterns from the main dashboard.
+
+**Consider:** This is the project's first client-side data fetching pattern — the main dashboard uses server-rendered templates with `data-*` attributes. The API approach is more flexible (you could build a mobile client or embed stats in a Discord command) but introduces a second rendering path to maintain.
+
+### Profanity Leaderboard
+
+**What:** A leaderboard ranking users by profanity usage. The word list is loaded from `config/profanity.txt` — a plain text file with one word per line.
+
+**Why:** It's a fun social feature that drives engagement. Making the word list a file (not hardcoded) means server admins can customize it without touching code. The list is loaded once and cached in memory via `settings.load_profanity_words()`.
+
+**Consider:** Like top-words, profanity counting is done in Python over a bounded set of recent messages (10,000). The same trade-off applies — simple now, materialized view later if needed. In a real deployment you'd keep the word list out of version control (e.g., mount it as a Docker secret); it's committed here for portfolio completeness.
 
 ### Async Database Access
 
