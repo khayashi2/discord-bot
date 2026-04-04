@@ -1,9 +1,8 @@
 ---
 name: perf-review
 description: Analyze code for performance inefficiencies — missing indexes, sequential awaits, Python-side aggregation, and memory concerns.
-argument-hint: [file-or-directory]
+argument-hint: "<file-or-directory>"
 user-invocable: true
-allowed-tools: Bash Read Grep Glob Agent AskUserQuestion
 ---
 
 # Performance Review
@@ -24,7 +23,7 @@ Arguments: `$ARGUMENTS` (optional file or directory path; defaults to full proje
       - Sequential sub-queries that could be combined or run concurrently.
 
    b. **Python (`PY`)** — Check for:
-      - Python-side aggregation over large row sets: look for patterns where `.all()` or `.scalars().all()` pulls 1,000+ rows then processes them with `Counter`, loops, or list comprehensions (e.g., word counting, emoji extraction, profanity scanning).
+      - Python-side aggregation over large row sets: look for patterns where `.all()` or `.scalars().all()` pulls 2,000+ rows then processes them with `Counter`, loops, or list comprehensions (e.g., word counting, emoji extraction, profanity scanning).
       - Regex recompilation: look for `re.compile()` calls inside functions rather than at module level.
       - Duplicate constants or patterns: look for the same regex or data structure defined in multiple files (e.g., `EMOJI_PATTERN` in both `queries.py` and `operations.py`).
       - Unbounded fetches: queries using `.limit()` with values >= 5000 or no `.limit()` at all on large tables.

@@ -1,9 +1,8 @@
 ---
 name: refactor
 description: Analyze code for refactoring opportunities — duplication, long functions, tangled dependencies, and naming issues.
-argument-hint: [file-or-directory]
+argument-hint: "<file-or-directory>"
 user-invocable: true
-allowed-tools: Bash Read Grep Glob Agent AskUserQuestion
 ---
 
 # Code Refactor Review
@@ -68,7 +67,7 @@ Arguments: `$ARGUMENTS` (optional file or directory path; defaults to full proje
 
    ### MEDIUM
 
-   #### [CX-001] `get_awards` function exceeds 80 lines
+   #### [CX-001] `get_awards` function exceeds 100 lines
    ...
 
    ---

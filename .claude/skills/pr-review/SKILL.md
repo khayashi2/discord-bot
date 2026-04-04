@@ -1,9 +1,8 @@
 ---
 name: pr-review
 description: Run lint, code review, tests, performance, security, and refactor checks before a PR. Shows all findings and lets you decide how to fix issues.
-argument-hint: [base-branch]
+argument-hint: "<base-branch>"
 user-invocable: true
-allowed-tools: Bash Read Grep Glob Agent AskUserQuestion
 ---
 
 # Pre-PR Review Pipeline
@@ -14,11 +13,11 @@ Arguments: `$ARGUMENTS` (optional base branch, defaults to `main`)
 
 ## Steps
 
-1. **Identify changed files** — Determine which files were modified on this branch compared to the base branch (default: `main`):
+1. **Identify changed directories** — Determine which directories contain modified Python files on this branch compared to the base branch (default: `main`):
    ```bash
-   git diff --name-only main...HEAD -- '*.py'
+   git diff --name-only main...HEAD -- '*.py' | xargs -I{} dirname {} | sort -u
    ```
-   Save this list — it scopes the targeted scans in step 2.
+   Save this list of unique directories — each sub-skill scan in step 2 receives one directory at a time (or multiple space-separated directories if the skill supports it). If a changed file is in the project root, pass `.` as the directory.
 
 2. **Run all six checks in parallel:**
 
@@ -74,7 +73,7 @@ Arguments: `$ARGUMENTS` (optional base branch, defaults to `main`)
    - "Ignore and proceed" — skip fixes, the issues are acceptable
 
 6. **Apply fixes based on user choice:**
-   - If auto-fix: run `ruff check --fix .` and `ruff format .` for lint issues, then dispatch code review findings to the appropriate agent, then apply performance/security/refactor fixes following each skill's fix guidance
+   - If auto-fix: run `ruff check --fix .` and `ruff format .` for lint issues, then dispatch code review findings to the appropriate agent, then invoke each sub-skill's "Fix all" mode for performance/security/refactor findings
    - If manual: do nothing, user handles it
    - If ignore: do nothing
 
