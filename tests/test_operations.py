@@ -3,6 +3,7 @@
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
+import discord
 import pytest
 
 from db.operations import (
@@ -49,8 +50,6 @@ def _make_channel(channel_id=10, name="general"):
 
 
 def _make_author(author_id=100, name="testuser", is_member=True):
-    import discord
-
     author = MagicMock(spec=discord.Member if is_member else discord.User)
     author.id = author_id
     author.name = name

@@ -9,6 +9,7 @@ import asyncio
 import logging
 
 import discord
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from config import settings
 from db.database import async_session
@@ -23,7 +24,10 @@ logger = logging.getLogger(__name__)
 BATCH_SIZE = 500
 
 
-async def backfill_channel(session_factory, channel: discord.TextChannel) -> int:
+async def backfill_channel(
+    session_factory: async_sessionmaker[AsyncSession],
+    channel: discord.TextChannel,
+) -> int:
     """Fetch and persist all messages from a single channel.
 
     Returns the number of messages processed.
@@ -54,11 +58,17 @@ async def backfill_channel(session_factory, channel: discord.TextChannel) -> int
 async def main() -> None:
     """Run the historical backfill."""
     intents = discord.Intents.default()
-    intents.message_content = True
     client = discord.Client(intents=intents)
+
+    backfill_done = False
 
     @client.event
     async def on_ready() -> None:
+        nonlocal backfill_done
+        if backfill_done:
+            return
+        backfill_done = True
+
         try:
             guild = client.get_guild(settings.DISCORD_GUILD_ID)
             if guild is None:
