@@ -135,7 +135,7 @@ async def get_activity_over_time(session: AsyncSession, days: int = 30) -> list[
     # Build a lookup and fill in days with zero messages
     counts_by_day = {r.day.strftime("%Y-%m-%d"): r.count for r in rows}
     result = []
-    for i in range(days):
+    for i in range(days + 1):
         day_str = (cutoff + timedelta(days=i)).strftime("%Y-%m-%d")
         result.append({"day": day_str, "count": counts_by_day.get(day_str, 0)})
     return result

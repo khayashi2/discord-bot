@@ -44,6 +44,7 @@ A Discord bot that tracks server activity and displays fun analytics (top words,
 - Shared DB operations (`db/operations.py`) — upsert/insert logic extracted so both listener and backfill use identical persistence code
 - PostgreSQL via Docker Compose for all environments
 - Async database access via asyncpg + SQLAlchemy async sessions
+- Dashboard analytics split into `dashboard/queries.py` — each query function returns plain dicts so the route handler stays thin
 
 ## Running Locally
 
@@ -82,6 +83,15 @@ The `scripts/backfill.py` script connects as a plain `discord.Client` (not a `co
 - **Sequential channel iteration** — channels are processed one at a time to avoid compounding Discord API rate limits. discord.py's built-in rate limiter handles throttling transparently.
 - **Per-channel error handling** — `discord.Forbidden` and `discord.HTTPException` are caught per-channel so one inaccessible channel doesn't abort the entire backfill.
 - **Bot messages filtered** — bot-authored messages are skipped during backfill since they don't represent real user activity for analytics.
+
+### Analytics Dashboard
+
+The `dashboard/queries.py` module contains all analytics query functions. Each function takes an `AsyncSession` and returns plain dicts/lists ready for Jinja2 templates. Key choices:
+
+- **Thin route handler** — `app.py` calls query functions and passes results to the template. If a query fails, the route falls back to an empty-context dict so the page still renders.
+- **Python-side aggregation for text analytics** — top-words and emoji extraction pull a bounded set of recent rows (5,000 / 2,000) and aggregate with `Counter` in Python. This is simpler than equivalent PostgreSQL functions and fast enough at current scale. Comments in the code flag where to add materialized views if volume grows.
+- **Chart.js via data attributes** — analytics data is serialized into `data-*` attributes on a hidden `<div>`, then read by `dashboard.js` to render charts. This avoids inline `<script>` blocks and keeps JS separate from Jinja2 templates.
+- **Stopword filtering** — top-words results exclude common English stopwords (defined in `queries.py`) so the list shows meaningful vocabulary rather than "the", "and", "is".
 
 ## Coding Standards and Best Practices
 
