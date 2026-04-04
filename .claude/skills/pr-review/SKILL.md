@@ -54,7 +54,9 @@ Arguments: `$ARGUMENTS` (optional base branch, defaults to `main`)
    - If manual: do nothing, user handles it
    - If ignore: do nothing
 
+6. **Update documentation** — After all issues are resolved (or skipped), run `/update-docs` to ensure README.md and CLAUDE.md are in sync with the changes on this branch. This step runs regardless of whether fixes were needed — any code change may warrant a docs update.
+
 ## Important
 - Always present findings before fixing — never auto-fix without asking
 - Run lint, code review, and tests in parallel to save time
-- If all three checks pass cleanly, report success and skip the fix prompt
+- If all three checks pass cleanly, report success then proceed directly to the docs update step (skip the fix prompt)

@@ -31,6 +31,8 @@ function escapeHtml(s) {
 
 /* Track chart instances for cleanup on user switch */
 const charts = {};
+let currentUserId = null;
+let currentRange = "";
 
 function destroyChart(key) {
     if (charts[key]) {
@@ -39,32 +41,83 @@ function destroyChart(key) {
     }
 }
 
+async function loadUserStats(userId, range) {
+    const url = range
+        ? `/api/user/${userId}?range=${range}`
+        : `/api/user/${userId}`;
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    renderUserStats(data);
+}
+
+const RANGE_LABELS = {
+    "7d": "Activity (Last 7 Days)",
+    "30d": "Activity (Last 30 Days)",
+    "90d": "Activity (Last 90 Days)",
+    "": "Activity (All Time)",
+};
+
 document.addEventListener("DOMContentLoaded", () => {
     const select = new TomSelect("#user-select", {
         allowEmptyOption: true,
         placeholder: "Search for a user...",
     });
 
+    /* Sticky user header */
+    const stickyHeader = document.getElementById("sticky-user-header");
+    const stickyName = document.getElementById("sticky-user-name");
+    const selectorCard = document.getElementById("user-selector-card");
+
+    const observer = new IntersectionObserver(
+        ([entry]) => {
+            if (!entry.isIntersecting && currentUserId) {
+                stickyHeader.classList.add("visible");
+            } else {
+                stickyHeader.classList.remove("visible");
+            }
+        },
+        { threshold: 0 }
+    );
+    observer.observe(selectorCard);
+
     select.on("change", async (value) => {
         if (!value) {
+            currentUserId = null;
             document.getElementById("user-stats").style.display = "none";
             document.getElementById("user-empty").style.display = "block";
             document.getElementById("user-display-name").textContent = "--";
+            stickyHeader.classList.remove("visible");
             return;
         }
 
+        currentUserId = value;
         const option = select.options[value];
         const displayName = option ? option.text : "--";
         document.getElementById("user-display-name").textContent = displayName;
+        stickyName.textContent = displayName;
 
         try {
-            const resp = await fetch(`/api/user/${value}`);
-            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-            const data = await resp.json();
-            renderUserStats(data);
+            await loadUserStats(value, currentRange);
         } catch (err) {
             console.error("Failed to load user stats:", err);
         }
+    });
+
+    /* Range picker buttons */
+    document.querySelectorAll("#user-range-picker button").forEach(btn => {
+        btn.addEventListener("click", async () => {
+            document.querySelectorAll("#user-range-picker button").forEach(b => b.classList.remove("active"));
+            btn.classList.add("active");
+            currentRange = btn.dataset.range;
+            if (currentUserId) {
+                try {
+                    await loadUserStats(currentUserId, currentRange);
+                } catch (err) {
+                    console.error("Failed to load user stats:", err);
+                }
+            }
+        });
     });
 });
 
@@ -76,10 +129,15 @@ function renderUserStats(data) {
     document.getElementById("user-msg-count").textContent = data.message_count.toLocaleString();
     document.getElementById("user-total-emoji").textContent = (data.emoji_stats?.total_emoji || 0).toLocaleString();
 
+    /* Update activity heading based on selected range */
+    document.getElementById("activity-heading").textContent = RANGE_LABELS[currentRange] || "Activity (All Time)";
+
     renderUserActivity(data.activity || []);
     renderUserWords(data.top_words || []);
     renderUserProfanity(data.profanity_words || []);
     renderUserEmoji(data.emoji_stats?.top_emoji || []);
+    renderUserPeakHours(data.peak_hours || []);
+    renderUserVocabulary(data.vocabulary || { ttr: 0, unique_words: 0, total_words: 0 });
 }
 
 function renderUserActivity(data) {
@@ -179,6 +237,58 @@ function renderUserEmoji(data) {
         ).join("");
     } else {
         container.style.display = "none";
+        empty.style.display = "block";
+    }
+}
+
+function renderUserPeakHours(data) {
+    destroyChart("peakHours");
+    const canvas = document.getElementById("userPeakHoursChart");
+    const empty = document.getElementById("userPeakHoursEmpty");
+    if (data.length) {
+        canvas.style.display = "block";
+        empty.style.display = "none";
+        charts.peakHours = new Chart(canvas, {
+            type: "bar",
+            data: {
+                labels: data.map(d => `${d.hour}:00`),
+                datasets: [{
+                    data: data.map(d => d.count),
+                    backgroundColor: COLORS.accent,
+                    borderRadius: 4,
+                }],
+            },
+            options: {
+                scales: {
+                    x: {
+                        grid: { display: false },
+                        title: { display: true, text: "Hour (Pacific)", color: COLORS.text },
+                    },
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: COLORS.grid },
+                        title: { display: true, text: "Messages", color: COLORS.text },
+                    },
+                },
+            },
+        });
+    } else {
+        canvas.style.display = "none";
+        empty.style.display = "block";
+    }
+}
+
+function renderUserVocabulary(data) {
+    const statsEl = document.getElementById("userVocabStats");
+    const empty = document.getElementById("userVocabEmpty");
+    if (data.total_words > 0) {
+        statsEl.style.display = "grid";
+        empty.style.display = "none";
+        document.getElementById("user-ttr").textContent = data.ttr.toFixed(3);
+        document.getElementById("user-unique-words").textContent = data.unique_words.toLocaleString();
+        document.getElementById("user-total-words").textContent = data.total_words.toLocaleString();
+    } else {
+        statsEl.style.display = "none";
         empty.style.display = "block";
     }
 }

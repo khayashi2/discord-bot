@@ -187,7 +187,7 @@
 
 <!-- Activity heatmap -->
 <div class="card">
-    <h2>Activity Heatmap <span style="font-size: 0.75rem; color: var(--text-secondary); font-weight: normal;">(UTC)</span></h2>
+    <h2>Activity Heatmap <span style="font-size: 0.75rem; color: var(--text-secondary); font-weight: normal;">(Pacific)</span></h2>
     {% if heatmap %}
         <div id="heatmapGrid" class="heatmap-grid"></div>
     {% else %}
@@ -199,6 +199,9 @@
 <div class="grid">
     <div class="card">
         <h2>Vocabulary Diversity</h2>
+        <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 0.75rem;">
+            Type-Token Ratio (TTR) = unique words / total words. Higher ratio = more diverse vocabulary.
+        </p>
         {% if vocabulary %}
             <canvas id="vocabularyChart"></canvas>
         {% else %}
@@ -229,7 +232,7 @@
 <!-- Peak hours & reaction time -->
 <div class="grid">
     <div class="card">
-        <h2>Peak Hours <span style="font-size: 0.75rem; color: var(--text-secondary); font-weight: normal;">(UTC)</span></h2>
+        <h2>Peak Hours <span style="font-size: 0.75rem; color: var(--text-secondary); font-weight: normal;">(Pacific)</span></h2>
         {% if peak_hours %}
             <canvas id="peakHoursChart"></canvas>
         {% else %}

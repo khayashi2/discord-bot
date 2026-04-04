@@ -28,8 +28,10 @@ from dashboard.queries import (
     get_user_activity_over_time,
     get_user_emoji_stats,
     get_user_message_count,
+    get_user_peak_hours,
     get_user_top_profanity_words,
     get_user_top_words,
+    get_user_vocabulary_diversity,
     get_vocabulary_diversity,
 )
 from db.database import async_session
@@ -128,7 +130,9 @@ async def user_page(request: Request) -> HTMLResponse:
 
 
 @app.get("/api/user/{member_id}")
-async def user_stats_api(member_id: int) -> dict:
+async def user_stats_api(
+    member_id: int, range: str | None = Query(default=None)
+) -> dict:
     """Return per-user analytics as JSON."""
     async with async_session() as session:
         exists = await session.scalar(
@@ -137,14 +141,29 @@ async def user_stats_api(member_id: int) -> dict:
         if not exists:
             raise HTTPException(status_code=404, detail="Member not found")
 
+        active_range = range if range in _VALID_RANGES else None
+        after = cutoff_from_range(active_range)
+
         try:
             return {
-                "top_words": await get_user_top_words(session, member_id),
-                "message_count": await get_user_message_count(session, member_id),
-                "activity": await get_user_activity_over_time(session, member_id),
-                "emoji_stats": await get_user_emoji_stats(session, member_id),
+                "top_words": await get_user_top_words(session, member_id, after=after),
+                "message_count": await get_user_message_count(
+                    session, member_id, after=after
+                ),
+                "activity": await get_user_activity_over_time(
+                    session, member_id, after=after
+                ),
+                "emoji_stats": await get_user_emoji_stats(
+                    session, member_id, after=after
+                ),
                 "profanity_words": await get_user_top_profanity_words(
-                    session, member_id
+                    session, member_id, after=after
+                ),
+                "peak_hours": await get_user_peak_hours(
+                    session, member_id, after=after
+                ),
+                "vocabulary": await get_user_vocabulary_diversity(
+                    session, member_id, after=after
                 ),
             }
         except Exception:
@@ -159,6 +178,8 @@ async def user_stats_api(member_id: int) -> dict:
                     "msgs_with_emoji": 0,
                     "top_emoji": [],
                 },
+                "peak_hours": [],
+                "vocabulary": {"ttr": 0, "unique_words": 0, "total_words": 0},
             }
 
 

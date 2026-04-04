@@ -302,15 +302,18 @@ async def get_all_members(session: AsyncSession) -> list[dict]:
 
 
 async def get_user_top_words(
-    session: AsyncSession, member_id: int, limit: int = 10
+    session: AsyncSession,
+    member_id: int,
+    limit: int = 10,
+    after: datetime | None = None,
 ) -> list[dict]:
     """Return the most frequently used words for a specific user."""
-    stmt = (
-        select(Message.content)
-        .where(Message.author_id == member_id, Message.content.isnot(None))
-        .order_by(Message.created_at.desc())
-        .limit(5000)  # Cap to bound memory usage on large histories
+    stmt = select(Message.content).where(
+        Message.author_id == member_id, Message.content.isnot(None)
     )
+    if after:
+        stmt = stmt.where(Message.created_at >= after)
+    stmt = stmt.order_by(Message.created_at.desc()).limit(5000)
     rows = (await session.execute(stmt)).scalars().all()
 
     counter: Counter[str] = Counter()
@@ -350,11 +353,16 @@ async def get_user_top_emoji(
     ]
 
 
-async def get_user_message_count(session: AsyncSession, member_id: int) -> int:
+async def get_user_message_count(
+    session: AsyncSession, member_id: int, after: datetime | None = None
+) -> int:
     """Return the total message count for a specific user."""
-    result = await session.scalar(
+    stmt = (
         select(func.count()).select_from(Message).where(Message.author_id == member_id)
     )
+    if after:
+        stmt = stmt.where(Message.created_at >= after)
+    result = await session.scalar(stmt)
     return result or 0
 
 
@@ -411,11 +419,15 @@ async def get_profanity_leaderboard(
 
 
 async def get_user_activity_over_time(
-    session: AsyncSession, member_id: int, days: int = 30
+    session: AsyncSession,
+    member_id: int,
+    days: int = 30,
+    after: datetime | None = None,
 ) -> list[dict]:
-    """Return daily message counts for a specific user over the last N days."""
+    """Return daily message counts for a specific user over a time range."""
     now = datetime.now(UTC)
-    cutoff = now - timedelta(days=days)
+    cutoff = after if after else now - timedelta(days=days)
+    range_days = (now - cutoff).days
     day_col = func.date_trunc("day", Message.created_at).label("day")
     stmt = (
         select(day_col, func.count().label("count"))
@@ -427,7 +439,7 @@ async def get_user_activity_over_time(
 
     counts_by_day = {r.day.strftime("%Y-%m-%d"): r.count for r in rows}
     result = []
-    for i in range(days + 1):
+    for i in range(range_days + 1):
         day_str = (cutoff + timedelta(days=i)).strftime("%Y-%m-%d")
         result.append({"day": day_str, "count": counts_by_day.get(day_str, 0)})
     return result
@@ -474,19 +486,22 @@ async def get_user_message_length_distribution(
 
 
 async def get_user_top_profanity_words(
-    session: AsyncSession, member_id: int, limit: int = 5
+    session: AsyncSession,
+    member_id: int,
+    limit: int = 5,
+    after: datetime | None = None,
 ) -> list[dict]:
     """Return the most frequently used profanity words for a specific user."""
     profanity_words = settings.load_profanity_words()
     if not profanity_words:
         return []
 
-    stmt = (
-        select(Message.content)
-        .where(Message.author_id == member_id, Message.content.isnot(None))
-        .order_by(Message.created_at.desc())
-        .limit(5000)
+    stmt = select(Message.content).where(
+        Message.author_id == member_id, Message.content.isnot(None)
     )
+    if after:
+        stmt = stmt.where(Message.created_at >= after)
+    stmt = stmt.order_by(Message.created_at.desc()).limit(5000)
     rows = (await session.execute(stmt)).scalars().all()
 
     counter: Counter[str] = Counter()
@@ -500,29 +515,85 @@ async def get_user_top_profanity_words(
     ]
 
 
-async def get_user_emoji_stats(session: AsyncSession, member_id: int) -> dict:
-    """Return emoji usage statistics for a specific user."""
-    total_emoji = await session.scalar(
-        select(func.coalesce(func.sum(Message.emoji_count), 0)).where(
-            Message.author_id == member_id
-        )
+async def get_user_peak_hours(
+    session: AsyncSession, member_id: int, after: datetime | None = None
+) -> list[dict]:
+    """Return message counts by hour of day for a user (Pacific Time)."""
+    pacific_time = func.timezone("US/Pacific", Message.created_at)
+    hour_col = func.extract("hour", pacific_time).label("hour")
+    stmt = select(hour_col, func.count().label("count")).where(
+        Message.author_id == member_id
     )
-    msgs_with_emoji = await session.scalar(
+    if after:
+        stmt = stmt.where(Message.created_at >= after)
+    stmt = stmt.group_by(hour_col)
+    rows = (await session.execute(stmt)).all()
+
+    if not rows:
+        return []
+
+    counts_by_hour = {int(r.hour): r.count for r in rows}
+    return [{"hour": h, "count": counts_by_hour.get(h, 0)} for h in range(24)]
+
+
+async def get_user_vocabulary_diversity(
+    session: AsyncSession, member_id: int, after: datetime | None = None
+) -> dict:
+    """Return vocabulary diversity (type-token ratio) for a specific user."""
+    stmt = select(Message.content).where(
+        Message.author_id == member_id, Message.content.isnot(None)
+    )
+    if after:
+        stmt = stmt.where(Message.created_at >= after)
+    stmt = stmt.order_by(Message.created_at.desc()).limit(5000)
+    rows = (await session.execute(stmt)).scalars().all()
+
+    all_words: list[str] = []
+    for content in rows:
+        cleaned = _clean_content(content.lower())
+        words = WORD_PATTERN.findall(cleaned)
+        all_words.extend(w for w in words if not _is_filtered_word(w))
+
+    if len(all_words) < 10:
+        return {"ttr": 0, "unique_words": 0, "total_words": 0}
+
+    unique = len(set(all_words))
+    total = len(all_words)
+    return {
+        "ttr": round(unique / total, 3),
+        "unique_words": unique,
+        "total_words": total,
+    }
+
+
+async def get_user_emoji_stats(
+    session: AsyncSession, member_id: int, after: datetime | None = None
+) -> dict:
+    """Return emoji usage statistics for a specific user."""
+    total_stmt = select(func.coalesce(func.sum(Message.emoji_count), 0)).where(
+        Message.author_id == member_id
+    )
+    if after:
+        total_stmt = total_stmt.where(Message.created_at >= after)
+    total_emoji = await session.scalar(total_stmt)
+
+    msgs_stmt = (
         select(func.count())
         .select_from(Message)
         .where(Message.author_id == member_id, Message.emoji_count > 0)
     )
+    if after:
+        msgs_stmt = msgs_stmt.where(Message.created_at >= after)
+    msgs_with_emoji = await session.scalar(msgs_stmt)
 
-    stmt = (
-        select(Message.content)
-        .where(
-            Message.author_id == member_id,
-            Message.emoji_count > 0,
-            Message.content.isnot(None),
-        )
-        .order_by(Message.created_at.desc())
-        .limit(2000)
+    stmt = select(Message.content).where(
+        Message.author_id == member_id,
+        Message.emoji_count > 0,
+        Message.content.isnot(None),
     )
+    if after:
+        stmt = stmt.where(Message.created_at >= after)
+    stmt = stmt.order_by(Message.created_at.desc()).limit(2000)
     rows = (await session.execute(stmt)).scalars().all()
 
     emoji_counter: Counter[str] = Counter()
@@ -546,8 +617,9 @@ async def get_activity_heatmap(
 
     PostgreSQL EXTRACT(dow) returns 0=Sunday through 6=Saturday.
     """
-    dow_col = func.extract("dow", Message.created_at).label("dow")
-    hour_col = func.extract("hour", Message.created_at).label("hour")
+    pacific_time = func.timezone("US/Pacific", Message.created_at)
+    dow_col = func.extract("dow", pacific_time).label("dow")
+    hour_col = func.extract("hour", pacific_time).label("hour")
     stmt = select(dow_col, hour_col, func.count().label("count"))
     if after:
         stmt = stmt.where(Message.created_at >= after)
@@ -559,8 +631,9 @@ async def get_activity_heatmap(
 async def get_peak_hours(
     session: AsyncSession, after: datetime | None = None
 ) -> list[dict]:
-    """Return message counts grouped by hour of day (0-23)."""
-    hour_col = func.extract("hour", Message.created_at).label("hour")
+    """Return message counts grouped by hour of day (0-23) in Pacific Time."""
+    pacific_time = func.timezone("US/Pacific", Message.created_at)
+    hour_col = func.extract("hour", pacific_time).label("hour")
     stmt = select(hour_col, func.count().label("count"))
     if after:
         stmt = stmt.where(Message.created_at >= after)
@@ -666,13 +739,14 @@ async def get_awards(
 
     awards = []
 
-    # Night Owl: most messages 00:00-04:59
+    # Night Owl: most messages 00:00-04:59 (Pacific Time)
+    pacific_time = func.timezone("US/Pacific", Message.created_at)
     night_stmt = (
         select(Message.author_id, func.count().label("value"))
         .join(Member, Message.author_id == Member.id)
         .where(
             Member.is_bot.is_(False),
-            func.extract("hour", Message.created_at).between(0, 4),
+            func.extract("hour", pacific_time).between(0, 4),
         )
         .group_by(Message.author_id)
         .order_by(literal_column("value").desc())
@@ -692,13 +766,13 @@ async def get_awards(
             }
         )
 
-    # Early Bird: most messages 05:00-09:59
+    # Early Bird: most messages 05:00-09:59 (Pacific Time)
     early_stmt = (
         select(Message.author_id, func.count().label("value"))
         .join(Member, Message.author_id == Member.id)
         .where(
             Member.is_bot.is_(False),
-            func.extract("hour", Message.created_at).between(5, 9),
+            func.extract("hour", pacific_time).between(5, 9),
         )
         .group_by(Message.author_id)
         .order_by(literal_column("value").desc())

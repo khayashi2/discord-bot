@@ -329,6 +329,26 @@ async def test_user_stats_api_returns_json():
                 AsyncMock(return_value=[{"word": "damn", "count": 5}]),
             )
         )
+        stack.enter_context(
+            patch(
+                "dashboard.app.get_user_peak_hours",
+                AsyncMock(
+                    return_value=[{"hour": 14, "count": 20}],
+                ),
+            )
+        )
+        stack.enter_context(
+            patch(
+                "dashboard.app.get_user_vocabulary_diversity",
+                AsyncMock(
+                    return_value={
+                        "ttr": 0.456,
+                        "unique_words": 200,
+                        "total_words": 438,
+                    },
+                ),
+            )
+        )
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -341,6 +361,144 @@ async def test_user_stats_api_returns_json():
         assert data["activity"][0]["day"] == "2026-04-01"
         assert data["emoji_stats"]["total_emoji"] == 30
         assert data["profanity_words"][0]["word"] == "damn"
+        assert data["peak_hours"][0]["hour"] == 14
+        assert data["vocabulary"]["ttr"] == 0.456
+
+
+@pytest.mark.asyncio
+async def test_user_stats_api_with_range_parameter():
+    """User stats API should pass cutoff to query functions when range is provided."""
+    with ExitStack() as stack:
+        mock_session_factory = stack.enter_context(patch("dashboard.app.async_session"))
+        mock_session = AsyncMock()
+        mock_session.scalar = AsyncMock(return_value=1)
+        mock_session_factory.return_value.__aenter__ = AsyncMock(
+            return_value=mock_session
+        )
+        mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        mock_top_words = stack.enter_context(
+            patch(
+                "dashboard.app.get_user_top_words",
+                AsyncMock(return_value=[]),
+            )
+        )
+        stack.enter_context(
+            patch("dashboard.app.get_user_message_count", AsyncMock(return_value=0))
+        )
+        stack.enter_context(
+            patch(
+                "dashboard.app.get_user_activity_over_time",
+                AsyncMock(return_value=[]),
+            )
+        )
+        stack.enter_context(
+            patch(
+                "dashboard.app.get_user_emoji_stats",
+                AsyncMock(
+                    return_value={
+                        "total_emoji": 0,
+                        "msgs_with_emoji": 0,
+                        "top_emoji": [],
+                    }
+                ),
+            )
+        )
+        stack.enter_context(
+            patch(
+                "dashboard.app.get_user_top_profanity_words",
+                AsyncMock(return_value=[]),
+            )
+        )
+        stack.enter_context(
+            patch(
+                "dashboard.app.get_user_peak_hours",
+                AsyncMock(return_value=[]),
+            )
+        )
+        stack.enter_context(
+            patch(
+                "dashboard.app.get_user_vocabulary_diversity",
+                AsyncMock(return_value={"ttr": 0, "unique_words": 0, "total_words": 0}),
+            )
+        )
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/api/user/12345?range=7d")
+
+        assert response.status_code == 200
+        # Verify that after was passed (non-None) to query functions
+        call_kwargs = mock_top_words.call_args
+        assert call_kwargs.kwargs["after"] is not None
+
+
+@pytest.mark.asyncio
+async def test_user_stats_api_ignores_invalid_range():
+    """User stats API should treat invalid range as all-time (after=None)."""
+    with ExitStack() as stack:
+        mock_session_factory = stack.enter_context(patch("dashboard.app.async_session"))
+        mock_session = AsyncMock()
+        mock_session.scalar = AsyncMock(return_value=1)
+        mock_session_factory.return_value.__aenter__ = AsyncMock(
+            return_value=mock_session
+        )
+        mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        mock_top_words = stack.enter_context(
+            patch(
+                "dashboard.app.get_user_top_words",
+                AsyncMock(return_value=[]),
+            )
+        )
+        stack.enter_context(
+            patch("dashboard.app.get_user_message_count", AsyncMock(return_value=0))
+        )
+        stack.enter_context(
+            patch(
+                "dashboard.app.get_user_activity_over_time",
+                AsyncMock(return_value=[]),
+            )
+        )
+        stack.enter_context(
+            patch(
+                "dashboard.app.get_user_emoji_stats",
+                AsyncMock(
+                    return_value={
+                        "total_emoji": 0,
+                        "msgs_with_emoji": 0,
+                        "top_emoji": [],
+                    }
+                ),
+            )
+        )
+        stack.enter_context(
+            patch(
+                "dashboard.app.get_user_top_profanity_words",
+                AsyncMock(return_value=[]),
+            )
+        )
+        stack.enter_context(
+            patch(
+                "dashboard.app.get_user_peak_hours",
+                AsyncMock(return_value=[]),
+            )
+        )
+        stack.enter_context(
+            patch(
+                "dashboard.app.get_user_vocabulary_diversity",
+                AsyncMock(return_value={"ttr": 0, "unique_words": 0, "total_words": 0}),
+            )
+        )
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/api/user/12345?range=invalid")
+
+        assert response.status_code == 200
+        # Invalid range should result in after=None (all-time)
+        call_kwargs = mock_top_words.call_args
+        assert call_kwargs.kwargs["after"] is None
 
 
 @pytest.mark.asyncio

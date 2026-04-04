@@ -32,11 +32,62 @@
         border-color: var(--accent);
         box-shadow: 0 0 0 2px rgba(233, 69, 96, 0.25);
     }
+    /* Range picker (button variant for client-side filtering) */
+    .range-picker {
+        display: flex;
+        gap: 0.5rem;
+        margin-bottom: 1.5rem;
+    }
+    .range-picker button {
+        padding: 0.4rem 1rem;
+        border-radius: 8px;
+        background: var(--bg-secondary);
+        color: var(--text-secondary);
+        font-size: 0.85rem;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        cursor: pointer;
+        transition: background 0.2s, color 0.2s;
+    }
+    .range-picker button:hover {
+        color: var(--text-primary);
+        border-color: var(--accent);
+    }
+    .range-picker button.active {
+        background: var(--accent);
+        color: #fff;
+        border-color: var(--accent);
+    }
+    /* Sticky user header */
+    .sticky-user-header {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 100;
+        background: var(--bg-secondary);
+        border-bottom: 2px solid var(--accent);
+        padding: 0.6rem 2rem;
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--accent);
+        opacity: 0;
+        transform: translateY(-100%);
+        transition: opacity 0.2s, transform 0.2s;
+        pointer-events: none;
+    }
+    .sticky-user-header.visible {
+        opacity: 1;
+        transform: translateY(0);
+    }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="card">
+<div id="sticky-user-header" class="sticky-user-header">
+    <span id="sticky-user-name"></span>
+</div>
+
+<div class="card" id="user-selector-card">
     <h2>Select a User</h2>
     <select id="user-select">
         <option value="">Choose a user...</option>
@@ -47,6 +98,12 @@
 </div>
 
 <div id="user-stats" style="display: none;">
+    <div class="range-picker" id="user-range-picker">
+        <button data-range="7d">7 Days</button>
+        <button data-range="30d">30 Days</button>
+        <button data-range="90d">90 Days</button>
+        <button data-range="" class="active">All Time</button>
+    </div>
     <div class="stats-row">
         <div class="stat-card">
             <div class="stat-value" id="user-display-name" style="font-size: 1.4rem;">--</div>
@@ -64,7 +121,7 @@
 
     <!-- Activity over time -->
     <div class="card">
-        <h2>Activity (Last 30 Days)</h2>
+        <h2 id="activity-heading">Activity (All Time)</h2>
         <canvas id="userActivityChart"></canvas>
         <p id="userActivityEmpty" class="empty-state" style="display: none;">No activity data yet.</p>
     </div>
@@ -88,6 +145,36 @@
         <h2>Top Emoji</h2>
         <div id="userEmojiList" class="emoji-list"></div>
         <p id="userEmojiEmpty" class="empty-state" style="display: none;">No emoji data yet.</p>
+    </div>
+
+    <!-- Peak hours & vocabulary diversity -->
+    <div class="grid">
+        <div class="card">
+            <h2>Peak Hours <span style="font-size: 0.75rem; color: var(--text-secondary); font-weight: normal;">(Pacific)</span></h2>
+            <canvas id="userPeakHoursChart"></canvas>
+            <p id="userPeakHoursEmpty" class="empty-state" style="display: none;">No peak hours data yet.</p>
+        </div>
+        <div class="card">
+            <h2>Vocabulary Diversity</h2>
+            <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 0.75rem;">
+                Type-Token Ratio (TTR) = unique words / total words. Higher ratio = more diverse vocabulary.
+            </p>
+            <div id="userVocabStats" class="stats-row">
+                <div class="stat-card">
+                    <div class="stat-value" id="user-ttr">--</div>
+                    <div class="stat-label">TTR Score</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="user-unique-words">--</div>
+                    <div class="stat-label">Unique Words</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="user-total-words">--</div>
+                    <div class="stat-label">Total Words</div>
+                </div>
+            </div>
+            <p id="userVocabEmpty" class="empty-state" style="display: none;">Not enough data for vocabulary analysis.</p>
+        </div>
     </div>
 </div>
 

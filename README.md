@@ -15,14 +15,16 @@ A Discord bot that tracks server activity and displays fun analytics on a web da
 - **Live Message Tracking** — the bot listens to every message in your server and stores it in PostgreSQL (content, author, channel, emoji count, attachments, and more)
 - **Upsert Strategy** — channels and members are automatically upserted so metadata stays fresh without duplicates
 - **Historical Backfill** — a one-off script ingests all past messages from every text channel, with batched commits and per-channel error handling
-- **Web Dashboard** — a FastAPI-powered analytics dashboard with Chart.js visualizations: overview stats, most active users, activity trend, top words, emoji usage, profanity leaderboard, activity heatmap, awards & superlatives, vocabulary diversity, and conversation flow
+- **Web Dashboard** — a FastAPI-powered analytics dashboard with Chart.js visualizations: overview stats, most active users, activity trend, top words, emoji usage, profanity leaderboard, activity heatmap, awards & superlatives, vocabulary diversity, conversation flow, peak hours, and reaction time kings
 - **Time-Filtered Analytics** — dashboard supports 7-day, 30-day, and 90-day time range filters so you can view activity over any recent window
-- **User Stats Page** — a dedicated per-user analytics page with a member dropdown; selecting a user fetches their stats via a JSON API and renders charts client-side (top words, activity over time, emoji usage, and top profanity words)
+- **User Stats Page** — a dedicated per-user analytics page with a member dropdown, time-range filtering (7d/30d/90d), and a sticky header showing the selected user as you scroll; includes top words, activity over time, emoji usage, top profanity words, peak hours, and vocabulary diversity
 - **Profanity Leaderboard** — ranks users by profanity usage using a configurable word list (`config/profanity.txt`), with a collapsible reference showing all tracked words and per-user profanity breakdowns on the user stats page
-- **Activity Heatmap** — a day-of-week × hour-of-day grid showing when the server is most active, with color intensity based on message volume (hours in UTC)
+- **Activity Heatmap** — a day-of-week × hour-of-day grid showing when the server is most active, with color intensity based on message volume (hours in Pacific Time, auto-adjusts for PST/PDT)
 - **Awards & Superlatives** — fun badges highlighting server members: Night Owl, Early Bird, Emoji Monarch, Novelist, Chatterbox, Editor, and Attachment Pro
 - **Vocabulary Diversity** — ranks users by type-token ratio (unique words / total words), showing who has the most diverse vocabulary
 - **Conversation Flow** — analyzes consecutive messages to show who replies to whom most often, based on messages within a 5-minute window in the same channel
+- **Peak Hours** — a bar chart showing message volume by hour of day (0–23 Pacific Time), revealing when the server is most active throughout the day
+- **Reaction Time Kings** — ranks the fastest responders by average reply time, using the same consecutive-message pairing logic as conversation flow (minimum 3 responses to qualify)
 
 ## Plan
 
@@ -44,7 +46,7 @@ Set up the discord.py bot that listens for new messages and inserts them in real
 
 ### Phase 5 — Dashboard (in progress)
 
-Build the API endpoints and frontend to visualize the trends. The dashboard is live with analytics panels (overview stats, top users, activity over time, top words, emoji usage, profanity leaderboard, activity heatmap, awards & superlatives, vocabulary diversity, conversation flow), time-range filtering (7d/30d/90d), and a dedicated per-user stats page with profanity word breakdown.
+Build the API endpoints and frontend to visualize the trends. The dashboard is live with analytics panels (overview stats, top users, activity over time, top words, emoji usage, profanity leaderboard, activity heatmap, awards & superlatives, vocabulary diversity, conversation flow, peak hours, reaction time kings), time-range filtering (7d/30d/90d), and a dedicated per-user stats page with time filtering, peak hours, vocabulary diversity, and profanity word breakdown.
 
 ## Getting Started
 
@@ -204,6 +206,22 @@ This section documents the "why" behind key decisions — useful context if you'
 
 **Consider:** Like top-words, profanity counting is done in Python over a bounded set of recent messages (10,000). The same trade-off applies — simple now, materialized view later if needed. In a real deployment you'd keep the word list out of version control (e.g., mount it as a Docker secret); it's committed here for portfolio completeness.
 
+### Peak Hours
+
+**What:** A bar chart showing message counts for each hour of the day (0–23 Pacific Time), revealing when the server is most active.
+
+**Why:** While the heatmap shows activity by day *and* hour, the peak hours chart collapses the day dimension to give a simpler, at-a-glance answer to "what time of day is this server busiest?" It uses PostgreSQL's `EXTRACT(hour FROM created_at AT TIME ZONE 'US/Pacific')` and fills in zero-count hours so the chart always shows all 24 bars.
+
+**Consider:** The timezone conversion is applied server-side in PostgreSQL, which correctly handles DST transitions per-row (each timestamp is converted based on its own date, not today's date). The chart complements the heatmap — one shows the weekly pattern, the other the daily pattern.
+
+### Reaction Time Kings
+
+**What:** A leaderboard ranking the fastest average responders — users who reply quickest after someone else posts in the same channel.
+
+**Why:** It adds a fun competitive element ("who's always online?") and surfaces social dynamics that pure message counts miss. The logic reuses the same consecutive-message pairing from conversation flow: two messages in the same channel, from different authors, within 5 minutes.
+
+**Consider:** A minimum of 3 responses is required to qualify, preventing someone with one fast reply from topping the list. The metric is approximate — it pairs *consecutive* messages, not explicit Discord replies, so busy channels with interleaved conversations can skew results. The scan is bounded to 10,000 recent messages for performance.
+
 ### Removing Message Lengths and Most Active Channels
 
 **What:** The Message Lengths (doughnut chart) and Most Active Channels (bar chart) panels were removed from both the landing page and user stats page.
@@ -218,7 +236,7 @@ This section documents the "why" behind key decisions — useful context if you'
 
 **Why:** Heatmaps are one of the best ways to spot temporal patterns at a glance — you can immediately see if your server is more active on weekends, or if there's a cluster of late-night chatters. The grid is rendered with pure DOM manipulation (no Chart.js) since a 7×24 cell grid maps more naturally to HTML/CSS than to a chart library.
 
-**Consider:** All timestamps are stored and displayed in UTC. This means a US-based server will see peak activity shifted by several hours. The dashboard labels hours as "(UTC)" to set expectations. A future improvement could let users choose a display timezone, but that adds complexity (timezone dropdown, client-side conversion) that isn't worth it for an MVP.
+**Consider:** All timestamps are stored in UTC but displayed in Pacific Time using PostgreSQL's `AT TIME ZONE 'US/Pacific'`, which automatically handles PST/PDT transitions. The timezone string is currently hardcoded in queries — a future improvement could make it configurable via `config.py` if the bot is deployed for servers in other timezones.
 
 ### Awards & Superlatives
 
@@ -243,6 +261,38 @@ This section documents the "why" behind key decisions — useful context if you'
 **Why:** It reveals the social dynamics of a server: who are the conversation pairs, who tends to respond to specific people. The 5-minute gap threshold filters out messages that happen to be in the same channel but aren't actually part of a conversation.
 
 **Consider:** This is a heuristic, not true threading. Discord doesn't expose reply relationships in older messages (only explicit replies via the reply feature). Consecutive-message pairing is a reasonable approximation but can misattribute replies in busy channels. The query processes 10,000 recent messages in Python, ordered chronologically by channel.
+
+### User Page Time Filtering
+
+**What:** The user stats page now supports the same 7-day, 30-day, 90-day, and all-time filters as the main dashboard. The range is passed as a query parameter to the JSON API (`/api/user/{member_id}?range=30d`), and all user query functions filter accordingly.
+
+**Why:** All-time user stats miss recent trends — a user might have been very active last week but quiet before that. Adding time filtering reuses the same `cutoff_from_range()` and `after` parameter pattern from the main dashboard, keeping the codebase consistent.
+
+**Consider:** Unlike the main dashboard (which uses `<a>` tags and full page reloads), the user page uses `<button>` elements with JavaScript click handlers since user selection already works client-side. The selected range persists when switching between users — it's treated as a user preference about the time window, not tied to a specific member.
+
+### Sticky User Header
+
+**What:** A fixed header that appears at the top of the page when you scroll past the user selector, showing the selected user's display name.
+
+**Why:** The user stats page can get long with multiple chart panels. Without a sticky header, you lose context about whose stats you're viewing once the selector scrolls out of view. This is a common UX pattern for dashboards with selectable entities.
+
+**Consider:** The header uses `IntersectionObserver` to detect when the selector card scrolls out of view, rather than a scroll event listener. This is more performant (no debouncing needed) and the browser handles the observation natively. The header has a CSS transition for smooth appear/disappear.
+
+### Pacific Time Conversion
+
+**What:** The activity heatmap, peak hours chart, and Night Owl/Early Bird awards all display hours in Pacific Time instead of UTC, using PostgreSQL's `timezone('US/Pacific', created_at)` function.
+
+**Why:** The server is US-based, so UTC hours were confusing — peak activity appeared shifted by 7-8 hours from what users expected. PostgreSQL's `AT TIME ZONE` handles PST/PDT transitions automatically based on each row's timestamp, which is more correct than a fixed UTC offset.
+
+**Consider:** The timezone string `"US/Pacific"` is hardcoded in three query functions. For a multi-timezone deployment, you'd want to extract this to `config.py` as a `DASHBOARD_TIMEZONE` setting. The conversion happens server-side in SQL, not client-side in JavaScript, because the `EXTRACT(hour)` needs to operate on the converted timestamp.
+
+### Per-User Peak Hours & Vocabulary Diversity
+
+**What:** Two new panels on the user stats page: a per-user peak hours bar chart and a vocabulary diversity stat card showing TTR score, unique words, and total words.
+
+**Why:** The main dashboard shows server-wide peak hours and vocabulary diversity, but users want to see their own patterns. "When am I most active?" and "How diverse is my vocabulary?" are natural follow-ups to the per-user stats already shown. Both panels include explanatory text so users understand what TTR means.
+
+**Consider:** The vocabulary diversity panel uses stat cards (not a chart) since it's a single user's data — a bar chart would only have one bar. The TTR description ("unique words / total words, higher = more diverse") appears on both the main dashboard and user page for consistency. The server returns `total_words: 0` when the sample is too small (< 10 words), and the client hides the panel in that case.
 
 ### Async Database Access
 
