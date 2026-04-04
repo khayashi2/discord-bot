@@ -51,7 +51,7 @@
     </div>
 </div>
 
-<!-- Top words & message length -->
+<!-- Top words & profanity leaderboard -->
 <div class="grid">
     <div class="card">
         <h2>Top Words</h2>
@@ -62,14 +62,11 @@
         {% endif %}
     </div>
     <div class="card">
-        <h2>Message Length Distribution</h2>
-        {% if msg_length and (msg_length.short or msg_length.medium or msg_length.long) %}
-            <canvas id="msgLengthChart"></canvas>
-            <p style="text-align:center; color:var(--text-secondary); margin-top:0.75rem; font-size:0.85rem;">
-                Avg: {{ msg_length.avg_length }} chars &middot; Max: {{ msg_length.max_length }} chars
-            </p>
+        <h2>Profanity Leaderboard</h2>
+        {% if profanity %}
+            <canvas id="profanityChart"></canvas>
         {% else %}
-            <p class="empty-state">No message data yet.</p>
+            <p class="empty-state">No profanity data yet.</p>
         {% endif %}
     </div>
 </div>
@@ -103,7 +100,7 @@
     data-top-channels='{{ top_channels | tojson }}'
     data-activity='{{ activity | tojson }}'
     data-top-words='{{ top_words | tojson }}'
-    data-msg-length='{{ msg_length | tojson }}'
+    data-profanity='{{ profanity | tojson }}'
     hidden></div>
 <script src="/static/dashboard.js"></script>
 {% endblock %}

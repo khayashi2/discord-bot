@@ -7,7 +7,15 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from dashboard.app import app
-from dashboard.queries import EMOJI_PATTERN, STOPWORDS, WORD_PATTERN
+from dashboard.queries import (
+    EMOJI_PATTERN,
+    FILTERED_WORDS,
+    STOPWORDS,
+    URL_PATTERN,
+    WORD_PATTERN,
+    _clean_content,
+    _is_filtered_word,
+)
 
 # ---------------------------------------------------------------------------
 # Utility function tests (no DB required)
@@ -48,6 +56,39 @@ def test_emoji_pattern_matches_custom_discord():
     assert _count_emojis("<a:animated:99999>") == 1
 
 
+def test_url_pattern_strips_urls():
+    """URL_PATTERN should match http/https and www URLs."""
+    text = "check https://example.com and www.foo.org here"
+    cleaned = URL_PATTERN.sub("", text)
+    assert "https://example.com" not in cleaned
+    assert "www.foo.org" not in cleaned
+    assert "check" in cleaned
+
+
+def test_clean_content_removes_urls():
+    """_clean_content should strip URLs from text."""
+    result = _clean_content("visit https://discord.gg/abc for info")
+    assert "https://discord.gg/abc" not in result
+    assert "visit" in result
+
+
+def test_is_filtered_word_excludes_extensions_and_stopwords():
+    """_is_filtered_word should catch stopwords, extensions, and domains."""
+    assert _is_filtered_word("jpg") is True
+    assert _is_filtered_word("com") is True
+    assert _is_filtered_word("https") is True
+    assert _is_filtered_word("the") is True
+    assert _is_filtered_word("discord") is False
+    assert _is_filtered_word("hello") is False
+
+
+def test_filtered_words_contains_expected():
+    """FILTERED_WORDS should include file extensions and domain suffixes."""
+    assert "gif" in FILTERED_WORDS
+    assert "pdf" in FILTERED_WORDS
+    assert "org" in FILTERED_WORDS
+
+
 # ---------------------------------------------------------------------------
 # Endpoint tests (mock DB queries)
 # ---------------------------------------------------------------------------
@@ -75,13 +116,9 @@ MOCK_QUERY_RESULTS = {
         "msgs_with_emoji": 80,
         "top_emoji": [{"emoji": "\U0001f60a", "count": 30}],
     },
-    "get_message_length_stats": {
-        "avg_length": 75,
-        "max_length": 1500,
-        "short": 400,
-        "medium": 600,
-        "long": 234,
-    },
+    "get_profanity_leaderboard": [
+        {"display_name": "Bob", "avatar_url": None, "count": 42},
+    ],
 }
 
 
@@ -134,7 +171,7 @@ async def test_index_returns_html_with_data():
         assert 'id="topUsersChart"' in html
         assert 'id="topChannelsChart"' in html
         assert 'id="topWordsChart"' in html
-        assert 'id="msgLengthChart"' in html
+        assert 'id="profanityChart"' in html
 
         # Check data is injected as JSON for Chart.js
         assert "discord" in html  # top word
@@ -157,13 +194,7 @@ async def test_index_handles_empty_data():
         "get_activity_over_time": [],
         "get_top_words": [],
         "get_emoji_stats": {"total_emoji": 0, "msgs_with_emoji": 0, "top_emoji": []},
-        "get_message_length_stats": {
-            "avg_length": 0,
-            "max_length": 0,
-            "short": 0,
-            "medium": 0,
-            "long": 0,
-        },
+        "get_profanity_leaderboard": [],
     }
 
     with ExitStack() as stack:
@@ -177,3 +208,69 @@ async def test_index_handles_empty_data():
         assert response.status_code == 200
         assert "No activity data yet" in response.text
         assert "No user data yet" in response.text
+
+
+@pytest.mark.asyncio
+async def test_user_page_returns_html():
+    """User stats page should return HTML with member dropdown."""
+    with ExitStack() as stack:
+        _patch_session(stack)
+        stack.enter_context(
+            patch(
+                "dashboard.app.get_all_members",
+                AsyncMock(
+                    return_value=[
+                        {
+                            "id": 1,
+                            "username": "alice",
+                            "display_name": "Alice",
+                            "avatar_url": None,
+                        },
+                    ]
+                ),
+            )
+        )
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/user")
+
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
+        assert "Alice" in response.text
+        assert "user-select" in response.text
+
+
+@pytest.mark.asyncio
+async def test_user_stats_api_returns_json():
+    """User stats API should return JSON with top words, emoji, and count."""
+    with ExitStack() as stack:
+        _patch_session(stack)
+        stack.enter_context(
+            patch(
+                "dashboard.app.get_user_top_words",
+                AsyncMock(return_value=[{"word": "hello", "count": 10}]),
+            )
+        )
+        stack.enter_context(
+            patch(
+                "dashboard.app.get_user_top_emoji",
+                AsyncMock(return_value=[{"emoji": "\U0001f60a", "count": 5}]),
+            )
+        )
+        stack.enter_context(
+            patch(
+                "dashboard.app.get_user_message_count",
+                AsyncMock(return_value=100),
+            )
+        )
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/api/user/12345")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["message_count"] == 100
+        assert data["top_words"][0]["word"] == "hello"
+        assert len(data["top_emoji"]) == 1

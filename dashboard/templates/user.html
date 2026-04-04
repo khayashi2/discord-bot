@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2/dist/css/tom-select.css">
+<style>
+    /* Tom Select dark theme overrides */
+    .ts-wrapper .ts-control {
+        background: var(--bg-card);
+        color: var(--text-primary);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        padding: 0.6rem 0.75rem;
+    }
+    .ts-wrapper .ts-control input { color: var(--text-primary); }
+    .ts-wrapper .ts-control input::placeholder { color: var(--text-secondary); }
+    .ts-dropdown {
+        background: var(--bg-card);
+        color: var(--text-primary);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        margin-top: 4px;
+    }
+    .ts-dropdown .option {
+        padding: 0.5rem 0.75rem;
+    }
+    .ts-dropdown .option:hover,
+    .ts-dropdown .active {
+        background: var(--accent);
+        color: #fff;
+    }
+    .ts-wrapper.focus .ts-control {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 2px rgba(233, 69, 96, 0.25);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Select a User</h2>
+    <select id="user-select" placeholder="Search for a user...">
+        <option value="">Choose a user...</option>
+        {% for m in members %}
+            <option value="{{ m.id }}">{{ m.display_name }}</option>
+        {% endfor %}
+    </select>
+</div>
+
+<div id="user-stats" style="display: none;">
+    <div class="stats-row">
+        <div class="stat-card">
+            <div class="stat-value" id="user-msg-count">0</div>
+            <div class="stat-label">Messages Sent</div>
+        </div>
+    </div>
+
+    <div class="grid">
+        <div class="card">
+            <h2>Top 10 Words</h2>
+            <canvas id="userWordsChart"></canvas>
+            <p id="userWordsEmpty" class="empty-state" style="display: none;">No word data yet.</p>
+        </div>
+        <div class="card">
+            <h2>Top 3 Emoji</h2>
+            <div id="userEmojiList" class="emoji-list"></div>
+            <p id="userEmojiEmpty" class="empty-state" style="display: none;">No emoji data yet.</p>
+        </div>
+    </div>
+</div>
+
+<div id="user-empty" class="card">
+    <p class="empty-state">Select a user to view their stats.</p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2/dist/js/tom-select.complete.min.js"></script>
+<script src="/static/user.js"></script>
+{% endblock %}

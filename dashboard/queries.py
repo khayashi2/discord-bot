@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import func, literal_column, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from config import settings
 from db.models import Channel, Member, Message
 
 # Common English stopwords to filter from top-words results
@@ -36,17 +37,46 @@ EMOJI_PATTERN = re.compile(
 
 WORD_PATTERN = re.compile(r"[a-zA-Z]{3,}")
 
+# Pattern to strip URLs before word extraction
+URL_PATTERN = re.compile(r"https?://\S+|www\.\S+", re.IGNORECASE)
 
-async def get_overview(session: AsyncSession) -> dict:
+# File extensions and domain suffixes to filter from word counts
+FILTERED_WORDS = frozenset(
+    "txt gif jpg jpeg png mp4 mp3 pdf doc docx zip rar webp webm mov avi wav "
+    "com org net edu gov io dev co uk us ca http https www".split()
+)
+
+
+def _clean_content(text: str) -> str:
+    """Strip URLs from text before word extraction."""
+    return URL_PATTERN.sub("", text)
+
+
+def _is_filtered_word(word: str) -> bool:
+    """Check if a word should be excluded from analytics."""
+    return word in STOPWORDS or word in FILTERED_WORDS
+
+
+def _cutoff_from_range(range_key: str | None) -> datetime | None:
+    """Convert a range key like '7d', '30d', '90d' to a cutoff datetime."""
+    if not range_key:
+        return None
+    days_map = {"7d": 7, "30d": 30, "90d": 90}
+    days = days_map.get(range_key)
+    if days is None:
+        return None
+    return datetime.now(UTC) - timedelta(days=days)
+
+
+async def get_overview(session: AsyncSession, after: datetime | None = None) -> dict:
     """Return high-level server stats in a single query."""
     today_start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
 
-    total_msgs = (
-        select(func.count())
-        .select_from(Message)
-        .scalar_subquery()
-        .label("total_messages")
-    )
+    msg_filter = select(func.count()).select_from(Message)
+    if after:
+        msg_filter = msg_filter.where(Message.created_at >= after)
+    total_msgs = msg_filter.scalar_subquery().label("total_messages")
+
     total_members = (
         select(func.count())
         .select_from(Member)
@@ -60,13 +90,16 @@ async def get_overview(session: AsyncSession) -> dict:
         .scalar_subquery()
         .label("total_channels")
     )
-    msgs_today = (
+
+    today_filter = (
         select(func.count())
         .select_from(Message)
         .where(Message.created_at >= today_start)
-        .scalar_subquery()
-        .label("messages_today")
     )
+    if after and after > today_start:
+        today_filter = today_filter.where(Message.created_at >= after)
+    msgs_today = today_filter.scalar_subquery().label("messages_today")
+
     stmt = select(total_msgs, total_members, total_channels, msgs_today)
     row = (await session.execute(stmt)).one()
 
@@ -78,7 +111,9 @@ async def get_overview(session: AsyncSession) -> dict:
     }
 
 
-async def get_top_users(session: AsyncSession, limit: int = 10) -> list[dict]:
+async def get_top_users(
+    session: AsyncSession, limit: int = 10, after: datetime | None = None
+) -> list[dict]:
     """Return the most active users by message count."""
     stmt = (
         select(
@@ -89,6 +124,11 @@ async def get_top_users(session: AsyncSession, limit: int = 10) -> list[dict]:
         )
         .join(Message, Message.author_id == Member.id)
         .where(Member.is_bot.is_(False))
+    )
+    if after:
+        stmt = stmt.where(Message.created_at >= after)
+    stmt = (
+        stmt
         # GROUP BY primary key; other Member columns are functionally dependent
         .group_by(Member.id)
         .order_by(literal_column("count").desc())
@@ -106,14 +146,17 @@ async def get_top_users(session: AsyncSession, limit: int = 10) -> list[dict]:
     ]
 
 
-async def get_top_channels(session: AsyncSession, limit: int = 10) -> list[dict]:
+async def get_top_channels(
+    session: AsyncSession, limit: int = 10, after: datetime | None = None
+) -> list[dict]:
     """Return the most active channels by message count."""
+    stmt = select(Channel.name, func.count().label("count")).join(
+        Message, Message.channel_id == Channel.id
+    )
+    if after:
+        stmt = stmt.where(Message.created_at >= after)
     stmt = (
-        select(Channel.name, func.count().label("count"))
-        .join(Message, Message.channel_id == Channel.id)
-        .group_by(Channel.id)
-        .order_by(literal_column("count").desc())
-        .limit(limit)
+        stmt.group_by(Channel.id).order_by(literal_column("count").desc()).limit(limit)
     )
     rows = (await session.execute(stmt)).all()
     return [{"name": r.name, "count": r.count} for r in rows]
@@ -158,8 +201,9 @@ async def get_top_words(session: AsyncSession, limit: int = 20) -> list[dict]:
 
     counter: Counter[str] = Counter()
     for content in rows:
-        words = WORD_PATTERN.findall(content.lower())
-        counter.update(w for w in words if w not in STOPWORDS)
+        cleaned = _clean_content(content.lower())
+        words = WORD_PATTERN.findall(cleaned)
+        counter.update(w for w in words if not _is_filtered_word(w))
 
     return [
         {"word": word, "count": count} for word, count in counter.most_common(limit)
@@ -230,3 +274,129 @@ async def get_message_length_stats(session: AsyncSession) -> dict:
         "medium": medium or 0,
         "long": long_ or 0,
     }
+
+
+async def get_all_members(session: AsyncSession) -> list[dict]:
+    """Return all non-bot members sorted by display name."""
+    stmt = (
+        select(Member.id, Member.username, Member.display_name, Member.avatar_url)
+        .where(Member.is_bot.is_(False))
+        .order_by(func.coalesce(Member.display_name, Member.username))
+    )
+    rows = (await session.execute(stmt)).all()
+    return [
+        {
+            "id": r.id,
+            "username": r.username,
+            "display_name": r.display_name or r.username,
+            "avatar_url": r.avatar_url,
+        }
+        for r in rows
+    ]
+
+
+async def get_user_top_words(
+    session: AsyncSession, member_id: int, limit: int = 10
+) -> list[dict]:
+    """Return the most frequently used words for a specific user."""
+    stmt = (
+        select(Message.content)
+        .where(Message.author_id == member_id, Message.content.isnot(None))
+        .order_by(Message.created_at.desc())
+        .limit(5000)  # Cap to bound memory usage on large histories
+    )
+    rows = (await session.execute(stmt)).scalars().all()
+
+    counter: Counter[str] = Counter()
+    for content in rows:
+        cleaned = _clean_content(content.lower())
+        words = WORD_PATTERN.findall(cleaned)
+        counter.update(w for w in words if not _is_filtered_word(w))
+
+    return [
+        {"word": word, "count": count} for word, count in counter.most_common(limit)
+    ]
+
+
+async def get_user_top_emoji(
+    session: AsyncSession, member_id: int, limit: int = 3
+) -> list[dict]:
+    """Return the most used emoji for a specific user."""
+    stmt = (
+        select(Message.content)
+        .where(
+            Message.author_id == member_id,
+            Message.emoji_count > 0,
+            Message.content.isnot(None),
+        )
+        .order_by(Message.created_at.desc())
+        .limit(2000)  # Cap to bound memory usage on large histories
+    )
+    rows = (await session.execute(stmt)).scalars().all()
+
+    emoji_counter: Counter[str] = Counter()
+    for content in rows:
+        emoji_counter.update(EMOJI_PATTERN.findall(content))
+
+    return [
+        {"emoji": emoji, "count": count}
+        for emoji, count in emoji_counter.most_common(limit)
+    ]
+
+
+async def get_user_message_count(session: AsyncSession, member_id: int) -> int:
+    """Return the total message count for a specific user."""
+    result = await session.scalar(
+        select(func.count()).select_from(Message).where(Message.author_id == member_id)
+    )
+    return result or 0
+
+
+async def get_profanity_leaderboard(
+    session: AsyncSession, limit: int = 10
+) -> list[dict]:
+    """Return the top users by profanity usage in recent messages."""
+
+    profanity_words = settings.load_profanity_words()
+    if not profanity_words:
+        return []
+
+    stmt = (
+        select(Message.author_id, Message.content)
+        .join(Member, Message.author_id == Member.id)
+        .where(Member.is_bot.is_(False), Message.content.isnot(None))
+        .order_by(Message.created_at.desc())
+        .limit(10000)  # Cap to bound memory usage; counts reflect recent activity
+    )
+    rows = (await session.execute(stmt)).all()
+
+    counter: Counter[int] = Counter()
+    for row in rows:
+        words = WORD_PATTERN.findall(row.content.lower())
+        count = sum(1 for w in words if w in profanity_words)
+        if count:
+            counter[row.author_id] += count
+
+    if not counter:
+        return []
+
+    # Fetch display names for the top offenders
+    top_ids = [author_id for author_id, _ in counter.most_common(limit)]
+    member_stmt = select(
+        Member.id, Member.display_name, Member.username, Member.avatar_url
+    ).where(Member.id.in_(top_ids))
+    member_rows = (await session.execute(member_stmt)).all()
+    member_map = {
+        r.id: {"display_name": r.display_name or r.username, "avatar_url": r.avatar_url}
+        for r in member_rows
+    }
+
+    return [
+        {
+            "display_name": member_map[author_id]["display_name"],
+            "avatar_url": member_map[author_id]["avatar_url"],
+            "count": count,
+        }
+        for author_id, count in counter.most_common(limit)
+        if author_id in member_map
+    ]

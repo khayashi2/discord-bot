@@ -43,7 +43,10 @@ function renderTopUsers(canvasId, data) {
         options: {
             indexAxis: "y",
             scales: {
-                x: { grid: { display: false } },
+                x: {
+                    grid: { display: false },
+                    title: { display: true, text: "Messages Sent", color: COLORS.text },
+                },
                 y: { grid: { display: false } },
             },
         },
@@ -70,7 +73,10 @@ function renderTopChannels(canvasId, data) {
         options: {
             indexAxis: "y",
             scales: {
-                x: { grid: { display: false } },
+                x: {
+                    grid: { display: false },
+                    title: { display: true, text: "Messages Sent", color: COLORS.text },
+                },
                 y: { grid: { display: false } },
             },
         },
@@ -106,6 +112,7 @@ function renderActivity(canvasId, data) {
                 y: {
                     beginAtZero: true,
                     grid: { color: COLORS.grid },
+                    title: { display: true, text: "Messages per Day", color: COLORS.text },
                 },
             },
         },
@@ -138,6 +145,7 @@ function renderTopWords(canvasId, data) {
                 y: {
                     beginAtZero: true,
                     grid: { color: COLORS.grid },
+                    title: { display: true, text: "Occurrences", color: COLORS.text },
                 },
             },
         },
@@ -145,29 +153,30 @@ function renderTopWords(canvasId, data) {
 }
 
 /**
- * Render a doughnut chart for message length distribution.
+ * Render a horizontal bar chart for profanity leaderboard.
  */
-function renderMsgLength(canvasId, data) {
+function renderProfanity(canvasId, data) {
     const canvas = document.getElementById(canvasId);
-    if (!canvas) return;
+    if (!canvas || !data.length) return;
 
     new Chart(canvas, {
-        type: "doughnut",
+        type: "bar",
         data: {
-            labels: ["Short (< 50)", "Medium (50-200)", "Long (> 200)"],
+            labels: data.map(d => d.display_name),
             datasets: [{
-                data: [data.short, data.medium, data.long],
-                backgroundColor: [COLORS.accent, COLORS.accentAlt, COLORS.blue],
-                borderWidth: 0,
+                data: data.map(d => d.count),
+                backgroundColor: COLORS.bars.slice(0, data.length),
+                borderRadius: 4,
             }],
         },
         options: {
-            plugins: {
-                legend: {
-                    display: true,
-                    position: "bottom",
-                    labels: { padding: 16 },
+            indexAxis: "y",
+            scales: {
+                x: {
+                    grid: { display: false },
+                    title: { display: true, text: "Occurrences", color: COLORS.text },
                 },
+                y: { grid: { display: false } },
             },
         },
     });
@@ -181,11 +190,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const topChannelsData = JSON.parse(dataEl.dataset.topChannels);
     const activityData = JSON.parse(dataEl.dataset.activity);
     const topWordsData = JSON.parse(dataEl.dataset.topWords);
-    const msgLengthData = JSON.parse(dataEl.dataset.msgLength);
+    const profanityData = JSON.parse(dataEl.dataset.profanity);
 
     renderTopUsers("topUsersChart", topUsersData);
     renderTopChannels("topChannelsChart", topChannelsData);
     renderActivity("activityChart", activityData);
     renderTopWords("topWordsChart", topWordsData);
-    renderMsgLength("msgLengthChart", msgLengthData);
+    renderProfanity("profanityChart", profanityData);
 });

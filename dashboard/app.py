@@ -12,12 +12,16 @@ from fastapi.templating import Jinja2Templates
 from config import settings
 from dashboard.queries import (
     get_activity_over_time,
+    get_all_members,
     get_emoji_stats,
-    get_message_length_stats,
     get_overview,
+    get_profanity_leaderboard,
     get_top_channels,
     get_top_users,
     get_top_words,
+    get_user_message_count,
+    get_user_top_emoji,
+    get_user_top_words,
 )
 from db.database import async_session
 
@@ -47,13 +51,7 @@ _EMPTY_CONTEXT = {
     "activity": [],
     "top_words": [],
     "emoji": {"total_emoji": 0, "msgs_with_emoji": 0, "top_emoji": []},
-    "msg_length": {
-        "avg_length": 0,
-        "max_length": 0,
-        "short": 0,
-        "medium": 0,
-        "long": 0,
-    },
+    "profanity": [],
 }
 
 
@@ -69,7 +67,7 @@ async def index(request: Request) -> HTMLResponse:
                 "activity": await get_activity_over_time(session),
                 "top_words": await get_top_words(session),
                 "emoji": await get_emoji_stats(session),
-                "msg_length": await get_message_length_stats(session),
+                "profanity": await get_profanity_leaderboard(session),
             }
     except Exception:
         logger.exception("Failed to load dashboard data")
@@ -80,6 +78,38 @@ async def index(request: Request) -> HTMLResponse:
         name="index.html",
         context={"title": "Discord Analytics", **context},
     )
+
+
+@app.get("/user", response_class=HTMLResponse)
+async def user_page(request: Request) -> HTMLResponse:
+    """Render the user stats page with a member dropdown."""
+    try:
+        async with async_session() as session:
+            members = await get_all_members(session)
+    except Exception:
+        logger.exception("Failed to load user page data")
+        members = []
+
+    return templates.TemplateResponse(
+        request=request,
+        name="user.html",
+        context={"title": "User Stats", "members": members},
+    )
+
+
+@app.get("/api/user/{member_id}")
+async def user_stats_api(member_id: int) -> dict:
+    """Return per-user analytics as JSON."""
+    try:
+        async with async_session() as session:
+            return {
+                "top_words": await get_user_top_words(session, member_id),
+                "top_emoji": await get_user_top_emoji(session, member_id),
+                "message_count": await get_user_message_count(session, member_id),
+            }
+    except Exception:
+        logger.exception("Failed to load user stats for member %d", member_id)
+        return {"top_words": [], "top_emoji": [], "message_count": 0}
 
 
 @app.get("/health")
