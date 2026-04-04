@@ -556,6 +556,92 @@ async def get_activity_heatmap(
     return [{"dow": int(r.dow), "hour": int(r.hour), "count": r.count} for r in rows]
 
 
+async def get_peak_hours(
+    session: AsyncSession, after: datetime | None = None
+) -> list[dict]:
+    """Return message counts grouped by hour of day (0-23)."""
+    hour_col = func.extract("hour", Message.created_at).label("hour")
+    stmt = select(hour_col, func.count().label("count"))
+    if after:
+        stmt = stmt.where(Message.created_at >= after)
+    stmt = stmt.group_by(hour_col)
+    rows = (await session.execute(stmt)).all()
+
+    if not rows:
+        return []
+
+    counts_by_hour = {int(r.hour): r.count for r in rows}
+    return [{"hour": h, "count": counts_by_hour.get(h, 0)} for h in range(24)]
+
+
+async def get_reaction_time_kings(
+    session: AsyncSession, limit: int = 10, after: datetime | None = None
+) -> list[dict]:
+    """Return fastest average responders based on consecutive messages.
+
+    Uses the same consecutive-message pairing logic as get_conversation_flow:
+    two messages in the same channel from different authors within 5 minutes.
+
+    NOTE: Results are approximate for servers with >10,000 recent messages.
+    The LIMIT bounds the scan to 10k rows ordered by (channel_id, created_at),
+    which may under-represent users active in higher-numbered channels.
+    """
+    stmt = (
+        select(Message.author_id, Message.channel_id, Message.created_at)
+        .join(Member, Message.author_id == Member.id)
+        .where(Member.is_bot.is_(False))
+    )
+    if after:
+        stmt = stmt.where(Message.created_at >= after)
+    stmt = stmt.order_by(Message.channel_id, Message.created_at.asc()).limit(10000)
+    rows = (await session.execute(stmt)).all()
+
+    gap = timedelta(minutes=5)
+    response_times: dict[int, list[float]] = {}
+    prev = None
+    for row in rows:
+        if (
+            prev
+            and prev.channel_id == row.channel_id
+            and prev.author_id != row.author_id
+            and (row.created_at - prev.created_at) <= gap
+        ):
+            delta = (row.created_at - prev.created_at).total_seconds()
+            response_times.setdefault(row.author_id, []).append(delta)
+        prev = row
+
+    if not response_times:
+        return []
+
+    # Compute averages, require minimum 3 responses to qualify
+    averages = [
+        (author_id, sum(times) / len(times), len(times))
+        for author_id, times in response_times.items()
+        if len(times) >= 3
+    ]
+    averages.sort(key=lambda x: x[1])
+    top = averages[:limit]
+
+    if not top:
+        return []
+
+    all_ids = [a[0] for a in top]
+    member_stmt = select(Member.id, Member.display_name, Member.username).where(
+        Member.id.in_(all_ids)
+    )
+    member_rows = (await session.execute(member_stmt)).all()
+    name_map = {r.id: r.display_name or r.username for r in member_rows}
+
+    return [
+        {
+            "display_name": name_map.get(author_id, "Unknown"),
+            "avg_seconds": round(avg, 1),
+            "response_count": count,
+        }
+        for author_id, avg, count in top
+    ]
+
+
 async def get_awards(
     session: AsyncSession, after: datetime | None = None
 ) -> list[dict]:

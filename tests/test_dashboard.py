@@ -139,6 +139,10 @@ MOCK_QUERY_RESULTS = {
     "get_conversation_flow": [
         {"from_user": "Alice", "to_user": "Bob", "count": 30},
     ],
+    "get_peak_hours": [{"hour": 14, "count": 50}],
+    "get_reaction_time_kings": [
+        {"display_name": "Alice", "avg_seconds": 32.5, "response_count": 15},
+    ],
 }
 
 
@@ -196,6 +200,8 @@ async def test_index_returns_html_with_data():
         assert 'id="topUsersChart"' in html
         assert 'id="topWordsChart"' in html
         assert 'id="profanityChart"' in html
+        assert 'id="peakHoursChart"' in html
+        assert 'id="reactionTimeChart"' in html
 
         # Check data is injected as JSON for Chart.js
         assert "discord" in html  # top word
@@ -221,6 +227,8 @@ async def test_index_handles_empty_data():
         "get_awards": [],
         "get_vocabulary_diversity": [],
         "get_conversation_flow": [],
+        "get_peak_hours": [],
+        "get_reaction_time_kings": [],
     }
 
     with ExitStack() as stack:

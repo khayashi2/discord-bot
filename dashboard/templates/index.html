@@ -226,6 +226,26 @@
     </div>
 </div>
 
+<!-- Peak hours & reaction time -->
+<div class="grid">
+    <div class="card">
+        <h2>Peak Hours <span style="font-size: 0.75rem; color: var(--text-secondary); font-weight: normal;">(UTC)</span></h2>
+        {% if peak_hours %}
+            <canvas id="peakHoursChart"></canvas>
+        {% else %}
+            <p class="empty-state">No peak hours data yet.</p>
+        {% endif %}
+    </div>
+    <div class="card">
+        <h2>Reaction Time Kings</h2>
+        {% if reaction_time %}
+            <canvas id="reactionTimeChart"></canvas>
+        {% else %}
+            <p class="empty-state">No reaction time data yet.</p>
+        {% endif %}
+    </div>
+</div>
+
 <!-- Awards & superlatives -->
 <div class="card">
     <h2>Awards &amp; Superlatives</h2>
@@ -254,6 +274,8 @@
     data-profanity='{{ profanity | tojson }}'
     data-heatmap='{{ heatmap | tojson }}'
     data-vocabulary='{{ vocabulary | tojson }}'
+    data-peak-hours='{{ peak_hours | tojson }}'
+    data-reaction-time='{{ reaction_time | tojson }}'
     hidden></div>
 <script src="/static/dashboard.js"></script>
 {% endblock %}
