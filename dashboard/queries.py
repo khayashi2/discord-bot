@@ -473,6 +473,33 @@ async def get_user_message_length_distribution(
     }
 
 
+async def get_user_top_profanity_words(
+    session: AsyncSession, member_id: int, limit: int = 5
+) -> list[dict]:
+    """Return the most frequently used profanity words for a specific user."""
+    profanity_words = settings.load_profanity_words()
+    if not profanity_words:
+        return []
+
+    stmt = (
+        select(Message.content)
+        .where(Message.author_id == member_id, Message.content.isnot(None))
+        .order_by(Message.created_at.desc())
+        .limit(5000)
+    )
+    rows = (await session.execute(stmt)).scalars().all()
+
+    counter: Counter[str] = Counter()
+    for content in rows:
+        cleaned = _clean_content(content.lower())
+        words = WORD_PATTERN.findall(cleaned)
+        counter.update(w for w in words if w in profanity_words)
+
+    return [
+        {"word": word, "count": count} for word, count in counter.most_common(limit)
+    ]
+
+
 async def get_user_emoji_stats(session: AsyncSession, member_id: int) -> dict:
     """Return emoji usage statistics for a specific user."""
     total_emoji = await session.scalar(
@@ -510,3 +537,353 @@ async def get_user_emoji_stats(session: AsyncSession, member_id: int) -> dict:
             for emoji, count in emoji_counter.most_common(10)
         ],
     }
+
+
+async def get_activity_heatmap(
+    session: AsyncSession, after: datetime | None = None
+) -> list[dict]:
+    """Return message counts grouped by day-of-week and hour for a heatmap.
+
+    PostgreSQL EXTRACT(dow) returns 0=Sunday through 6=Saturday.
+    """
+    dow_col = func.extract("dow", Message.created_at).label("dow")
+    hour_col = func.extract("hour", Message.created_at).label("hour")
+    stmt = select(dow_col, hour_col, func.count().label("count"))
+    if after:
+        stmt = stmt.where(Message.created_at >= after)
+    stmt = stmt.group_by(dow_col, hour_col)
+    rows = (await session.execute(stmt)).all()
+    return [{"dow": int(r.dow), "hour": int(r.hour), "count": r.count} for r in rows]
+
+
+async def get_awards(
+    session: AsyncSession, after: datetime | None = None
+) -> list[dict]:
+    """Return fun award superlatives for top members in various categories."""
+
+    async def _top_member(stmt_base):
+        """Execute a grouped-by-author query and return the top result."""
+        row = (await session.execute(stmt_base)).first()
+        if not row:
+            return None
+        member_stmt = select(
+            Member.display_name, Member.username, Member.avatar_url
+        ).where(Member.id == row.author_id)
+        member = (await session.execute(member_stmt)).first()
+        if not member:
+            return None
+        return {
+            "display_name": member.display_name or member.username,
+            "avatar_url": member.avatar_url,
+            "value": row.value,
+        }
+
+    awards = []
+
+    # Night Owl: most messages 00:00-04:59
+    night_stmt = (
+        select(Message.author_id, func.count().label("value"))
+        .join(Member, Message.author_id == Member.id)
+        .where(
+            Member.is_bot.is_(False),
+            func.extract("hour", Message.created_at).between(0, 4),
+        )
+        .group_by(Message.author_id)
+        .order_by(literal_column("value").desc())
+        .limit(1)
+    )
+    if after:
+        night_stmt = night_stmt.where(Message.created_at >= after)
+    result = await _top_member(night_stmt)
+    if result:
+        awards.append(
+            {
+                "title": "Night Owl",
+                "icon": "\U0001f989",
+                "member_display_name": result["display_name"],
+                "member_avatar_url": result["avatar_url"],
+                "detail_text": f"{result['value']} messages between 12-4 AM",
+            }
+        )
+
+    # Early Bird: most messages 05:00-09:59
+    early_stmt = (
+        select(Message.author_id, func.count().label("value"))
+        .join(Member, Message.author_id == Member.id)
+        .where(
+            Member.is_bot.is_(False),
+            func.extract("hour", Message.created_at).between(5, 9),
+        )
+        .group_by(Message.author_id)
+        .order_by(literal_column("value").desc())
+        .limit(1)
+    )
+    if after:
+        early_stmt = early_stmt.where(Message.created_at >= after)
+    result = await _top_member(early_stmt)
+    if result:
+        awards.append(
+            {
+                "title": "Early Bird",
+                "icon": "\U0001f426",
+                "member_display_name": result["display_name"],
+                "member_avatar_url": result["avatar_url"],
+                "detail_text": f"{result['value']} messages between 5-9 AM",
+            }
+        )
+
+    # Emoji Monarch: highest emoji_count sum
+    emoji_stmt = (
+        select(Message.author_id, func.sum(Message.emoji_count).label("value"))
+        .join(Member, Message.author_id == Member.id)
+        .where(Member.is_bot.is_(False))
+        .group_by(Message.author_id)
+        .order_by(literal_column("value").desc())
+        .limit(1)
+    )
+    if after:
+        emoji_stmt = emoji_stmt.where(Message.created_at >= after)
+    result = await _top_member(emoji_stmt)
+    if result:
+        awards.append(
+            {
+                "title": "Emoji Monarch",
+                "icon": "\U0001f451",
+                "member_display_name": result["display_name"],
+                "member_avatar_url": result["avatar_url"],
+                "detail_text": f"{result['value']} emoji used",
+            }
+        )
+
+    # Novelist: highest avg content length (min 50 messages)
+    novelist_stmt = (
+        select(
+            Message.author_id,
+            func.round(func.avg(Message.content_length)).label("value"),
+        )
+        .join(Member, Message.author_id == Member.id)
+        .where(Member.is_bot.is_(False))
+        .group_by(Message.author_id)
+        .having(func.count() >= 50)
+        .order_by(literal_column("value").desc())
+        .limit(1)
+    )
+    if after:
+        novelist_stmt = novelist_stmt.where(Message.created_at >= after)
+    result = await _top_member(novelist_stmt)
+    if result:
+        awards.append(
+            {
+                "title": "Novelist",
+                "icon": "\U0001f4d6",
+                "member_display_name": result["display_name"],
+                "member_avatar_url": result["avatar_url"],
+                "detail_text": f"Avg {int(result['value'])} chars per message",
+            }
+        )
+
+    # Chatterbox: most messages overall
+    chatter_stmt = (
+        select(Message.author_id, func.count().label("value"))
+        .join(Member, Message.author_id == Member.id)
+        .where(Member.is_bot.is_(False))
+        .group_by(Message.author_id)
+        .order_by(literal_column("value").desc())
+        .limit(1)
+    )
+    if after:
+        chatter_stmt = chatter_stmt.where(Message.created_at >= after)
+    result = await _top_member(chatter_stmt)
+    if result:
+        awards.append(
+            {
+                "title": "Chatterbox",
+                "icon": "\U0001f4ac",
+                "member_display_name": result["display_name"],
+                "member_avatar_url": result["avatar_url"],
+                "detail_text": f"{result['value']} messages sent",
+            }
+        )
+
+    # Editor: most edited messages
+    editor_stmt = (
+        select(Message.author_id, func.count().label("value"))
+        .join(Member, Message.author_id == Member.id)
+        .where(
+            Member.is_bot.is_(False),
+            Message.edited_at.isnot(None),
+        )
+        .group_by(Message.author_id)
+        .order_by(literal_column("value").desc())
+        .limit(1)
+    )
+    if after:
+        editor_stmt = editor_stmt.where(Message.created_at >= after)
+    result = await _top_member(editor_stmt)
+    if result:
+        awards.append(
+            {
+                "title": "Editor",
+                "icon": "\u270f\ufe0f",
+                "member_display_name": result["display_name"],
+                "member_avatar_url": result["avatar_url"],
+                "detail_text": f"{result['value']} messages edited",
+            }
+        )
+
+    # Attachment Pro: most messages with attachments
+    attach_stmt = (
+        select(Message.author_id, func.count().label("value"))
+        .join(Member, Message.author_id == Member.id)
+        .where(
+            Member.is_bot.is_(False),
+            Message.has_attachments.is_(True),
+        )
+        .group_by(Message.author_id)
+        .order_by(literal_column("value").desc())
+        .limit(1)
+    )
+    if after:
+        attach_stmt = attach_stmt.where(Message.created_at >= after)
+    result = await _top_member(attach_stmt)
+    if result:
+        awards.append(
+            {
+                "title": "Attachment Pro",
+                "icon": "\U0001f4ce",
+                "member_display_name": result["display_name"],
+                "member_avatar_url": result["avatar_url"],
+                "detail_text": f"{result['value']} attachments shared",
+            }
+        )
+
+    return awards
+
+
+async def get_vocabulary_diversity(
+    session: AsyncSession, limit: int = 10, after: datetime | None = None
+) -> list[dict]:
+    """Return vocabulary diversity (type-token ratio) for the most active users.
+
+    TTR = unique_words / total_words. Higher ratio means more diverse vocabulary.
+    """
+    # Find top users by message count
+    user_stmt = (
+        select(Message.author_id, func.count().label("msg_count"))
+        .join(Member, Message.author_id == Member.id)
+        .where(Member.is_bot.is_(False))
+    )
+    if after:
+        user_stmt = user_stmt.where(Message.created_at >= after)
+    user_stmt = (
+        user_stmt.group_by(Message.author_id)
+        .order_by(literal_column("msg_count").desc())
+        .limit(limit)
+    )
+    top_users = (await session.execute(user_stmt)).all()
+    if not top_users:
+        return []
+
+    top_ids = [r.author_id for r in top_users]
+
+    # Batch-fetch recent messages for all top users
+    msg_stmt = select(Message.author_id, Message.content).where(
+        Message.author_id.in_(top_ids),
+        Message.content.isnot(None),
+    )
+    if after:
+        msg_stmt = msg_stmt.where(Message.created_at >= after)
+    msg_stmt = msg_stmt.order_by(Message.created_at.desc()).limit(limit * 2000)
+    rows = (await session.execute(msg_stmt)).all()
+
+    # Group words by author and compute TTR
+    author_words: dict[int, list[str]] = {uid: [] for uid in top_ids}
+    for row in rows:
+        cleaned = _clean_content(row.content.lower())
+        words = WORD_PATTERN.findall(cleaned)
+        filtered = [w for w in words if not _is_filtered_word(w)]
+        author_words[row.author_id].extend(filtered)
+
+    # Fetch member info
+    member_stmt = select(Member.id, Member.display_name, Member.username).where(
+        Member.id.in_(top_ids)
+    )
+    member_rows = (await session.execute(member_stmt)).all()
+    member_map = {r.id: r.display_name or r.username for r in member_rows}
+
+    results = []
+    for uid in top_ids:
+        words = author_words[uid]
+        if len(words) < 10:
+            continue
+        unique = len(set(words))
+        total = len(words)
+        ttr = round(unique / total, 3)
+        results.append(
+            {
+                "display_name": member_map.get(uid, "Unknown"),
+                "ttr": ttr,
+                "unique_words": unique,
+                "total_words": total,
+            }
+        )
+
+    results.sort(key=lambda x: x["ttr"], reverse=True)
+    return results
+
+
+async def get_conversation_flow(
+    session: AsyncSession, after: datetime | None = None, gap_minutes: int = 5
+) -> list[dict]:
+    """Return top reply pairs based on consecutive messages in the same channel.
+
+    Two messages count as a reply pair when they are in the same channel,
+    from different authors, and within `gap_minutes` of each other.
+    """
+    stmt = (
+        select(Message.author_id, Message.channel_id, Message.created_at)
+        .join(Member, Message.author_id == Member.id)
+        .where(Member.is_bot.is_(False))
+    )
+    if after:
+        stmt = stmt.where(Message.created_at >= after)
+    stmt = stmt.order_by(Message.channel_id, Message.created_at.asc()).limit(10000)
+    rows = (await session.execute(stmt)).all()
+
+    gap = timedelta(minutes=gap_minutes)
+    pair_counter: Counter[tuple[int, int]] = Counter()
+    prev = None
+    for row in rows:
+        if (
+            prev
+            and prev.channel_id == row.channel_id
+            and prev.author_id != row.author_id
+            and (row.created_at - prev.created_at) <= gap
+        ):
+            pair_counter[(prev.author_id, row.author_id)] += 1
+        prev = row
+
+    if not pair_counter:
+        return []
+
+    # Get display names for all involved members
+    top_pairs = pair_counter.most_common(20)
+    all_ids = set()
+    for (a, b), _ in top_pairs:
+        all_ids.add(a)
+        all_ids.add(b)
+
+    member_stmt = select(Member.id, Member.display_name, Member.username).where(
+        Member.id.in_(all_ids)
+    )
+    member_rows = (await session.execute(member_stmt)).all()
+    name_map = {r.id: r.display_name or r.username for r in member_rows}
+
+    return [
+        {
+            "from_user": name_map.get(a, "Unknown"),
+            "to_user": name_map.get(b, "Unknown"),
+            "count": count,
+        }
+        for (a, b), count in top_pairs
+    ]

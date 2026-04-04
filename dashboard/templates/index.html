@@ -26,6 +26,59 @@
         color: #fff;
         border-color: var(--accent);
     }
+    /* Activity heatmap */
+    .heatmap-grid {
+        display: grid;
+        grid-template-columns: 40px repeat(24, 1fr);
+        grid-template-rows: auto repeat(7, 1fr);
+        gap: 2px;
+    }
+    .heatmap-label {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.7rem;
+        color: var(--text-secondary);
+    }
+    .heatmap-cell {
+        aspect-ratio: 1;
+        border-radius: 3px;
+        min-width: 12px;
+        min-height: 12px;
+    }
+    /* Awards grid */
+    .awards-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 1rem;
+    }
+    .award-badge {
+        text-align: center;
+        padding: 1rem 0.5rem;
+        background: var(--bg-secondary);
+        border-radius: 8px;
+    }
+    .award-icon { font-size: 2rem; margin-bottom: 0.3rem; }
+    .award-title { font-weight: 600; font-size: 0.85rem; color: var(--accent); }
+    .award-winner { font-size: 0.9rem; margin-top: 0.25rem; }
+    .award-detail { font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.2rem; }
+    /* Conversation flow table */
+    .flow-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9rem;
+    }
+    .flow-table th, .flow-table td {
+        padding: 0.5rem 0.75rem;
+        text-align: left;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .flow-table th {
+        color: var(--text-secondary);
+        font-weight: 600;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+    }
 </style>
 {% endblock %}
 
@@ -68,7 +121,7 @@
     {% endif %}
 </div>
 
-<!-- Top users & channels -->
+<!-- Top users & top words -->
 <div class="grid">
     <div class="card">
         <h2>Most Active Users</h2>
@@ -79,18 +132,6 @@
         {% endif %}
     </div>
     <div class="card">
-        <h2>Most Active Channels</h2>
-        {% if top_channels %}
-            <canvas id="topChannelsChart"></canvas>
-        {% else %}
-            <p class="empty-state">No channel data yet.</p>
-        {% endif %}
-    </div>
-</div>
-
-<!-- Top words & profanity leaderboard -->
-<div class="grid">
-    <div class="card">
         <h2>Top Words</h2>
         {% if top_words %}
             <canvas id="topWordsChart"></canvas>
@@ -98,6 +139,10 @@
             <p class="empty-state">No word data yet.</p>
         {% endif %}
     </div>
+</div>
+
+<!-- Profanity leaderboard & emoji stats -->
+<div class="grid">
     <div class="card">
         <h2>Profanity Leaderboard</h2>
         {% if profanity %}
@@ -105,20 +150,17 @@
         {% else %}
             <p class="empty-state">No profanity data yet.</p>
         {% endif %}
-    </div>
-</div>
-
-<!-- Message lengths & emoji stats -->
-<div class="grid">
-    <div class="card">
-        <h2>Message Lengths</h2>
-        {% if message_lengths and message_lengths.short + message_lengths.medium + message_lengths.long > 0 %}
-            <p style="color:var(--text-secondary); margin-bottom:0.75rem;">
-                Avg: {{ message_lengths.avg_length }} chars | Max: {{ message_lengths.max_length }} chars
-            </p>
-            <canvas id="messageLengthChart"></canvas>
-        {% else %}
-            <p class="empty-state">No message data yet.</p>
+        {% if profanity_words_list %}
+        <details style="margin-top: 1rem;">
+            <summary style="cursor: pointer; color: var(--text-secondary); font-size: 0.85rem;">
+                View profanity word list ({{ profanity_words_list | length }} words)
+            </summary>
+            <div style="margin-top: 0.5rem; display: flex; flex-wrap: wrap; gap: 0.4rem;">
+                {% for word in profanity_words_list %}
+                    <span style="background: var(--bg-secondary); padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.8rem;">{{ word }}</span>
+                {% endfor %}
+            </div>
+        </details>
         {% endif %}
     </div>
     <div class="card">
@@ -142,16 +184,76 @@
         {% endif %}
     </div>
 </div>
+
+<!-- Activity heatmap -->
+<div class="card">
+    <h2>Activity Heatmap <span style="font-size: 0.75rem; color: var(--text-secondary); font-weight: normal;">(UTC)</span></h2>
+    {% if heatmap %}
+        <div id="heatmapGrid" class="heatmap-grid"></div>
+    {% else %}
+        <p class="empty-state">No heatmap data yet.</p>
+    {% endif %}
+</div>
+
+<!-- Vocabulary diversity -->
+<div class="grid">
+    <div class="card">
+        <h2>Vocabulary Diversity</h2>
+        {% if vocabulary %}
+            <canvas id="vocabularyChart"></canvas>
+        {% else %}
+            <p class="empty-state">No vocabulary data yet.</p>
+        {% endif %}
+    </div>
+    <div class="card">
+        <h2>Conversation Flow</h2>
+        {% if conversation_flow %}
+            <table class="flow-table">
+                <thead><tr><th>From</th><th>To</th><th>Replies</th></tr></thead>
+                <tbody>
+                    {% for flow in conversation_flow %}
+                        <tr>
+                            <td>{{ flow.from_user }}</td>
+                            <td>{{ flow.to_user }}</td>
+                            <td>{{ flow.count }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p class="empty-state">No conversation data yet.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Awards & superlatives -->
+<div class="card">
+    <h2>Awards &amp; Superlatives</h2>
+    {% if awards %}
+        <div class="awards-grid">
+            {% for award in awards %}
+                <div class="award-badge">
+                    <div class="award-icon">{{ award.icon }}</div>
+                    <div class="award-title">{{ award.title }}</div>
+                    <div class="award-winner">{{ award.member_display_name }}</div>
+                    <div class="award-detail">{{ award.detail_text }}</div>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p class="empty-state">No award data yet.</p>
+    {% endif %}
+</div>
 {% endblock %}
 
 {% block scripts %}
 <div id="chart-data"
     data-top-users='{{ top_users | tojson }}'
-    data-top-channels='{{ top_channels | tojson }}'
     data-activity='{{ activity | tojson }}'
     data-top-words='{{ top_words | tojson }}'
     data-profanity='{{ profanity | tojson }}'
-    data-message-lengths='{{ message_lengths | tojson }}'
+    data-heatmap='{{ heatmap | tojson }}'
+    data-vocabulary='{{ vocabulary | tojson }}'
     hidden></div>
 <script src="/static/dashboard.js"></script>
 {% endblock %}

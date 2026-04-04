@@ -54,36 +54,6 @@ function renderTopUsers(canvasId, data) {
 }
 
 /**
- * Render a horizontal bar chart for top channels.
- */
-function renderTopChannels(canvasId, data) {
-    const canvas = document.getElementById(canvasId);
-    if (!canvas || !data.length) return;
-
-    new Chart(canvas, {
-        type: "bar",
-        data: {
-            labels: data.map(d => "#" + d.name),
-            datasets: [{
-                data: data.map(d => d.count),
-                backgroundColor: COLORS.bars.slice(0, data.length),
-                borderRadius: 4,
-            }],
-        },
-        options: {
-            indexAxis: "y",
-            scales: {
-                x: {
-                    grid: { display: false },
-                    title: { display: true, text: "Messages Sent", color: COLORS.text },
-                },
-                y: { grid: { display: false } },
-            },
-        },
-    });
-}
-
-/**
  * Render a line chart for daily activity over time.
  */
 function renderActivity(canvasId, data) {
@@ -183,27 +153,86 @@ function renderProfanity(canvasId, data) {
 }
 
 /**
- * Render a doughnut chart for message length distribution.
+ * Render an activity heatmap (day-of-week x hour) using DOM elements.
  */
-function renderMessageLengths(canvasId, data) {
+function renderHeatmap(containerId, data) {
+    const container = document.getElementById(containerId);
+    if (!container || !data.length) return;
+
+    const dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    // Build lookup: grid[dow][hour] = count
+    const grid = {};
+    let maxCount = 0;
+    for (const d of data) {
+        if (!grid[d.dow]) grid[d.dow] = {};
+        grid[d.dow][d.hour] = d.count;
+        if (d.count > maxCount) maxCount = d.count;
+    }
+
+    // Top-left empty corner
+    const corner = document.createElement("div");
+    corner.className = "heatmap-label";
+    container.appendChild(corner);
+
+    // Hour labels across top
+    for (let h = 0; h < 24; h++) {
+        const label = document.createElement("div");
+        label.className = "heatmap-label";
+        label.textContent = h;
+        container.appendChild(label);
+    }
+
+    // Rows: reorder to Mon-Sun (1,2,3,4,5,6,0)
+    const dowOrder = [1, 2, 3, 4, 5, 6, 0];
+    for (const dow of dowOrder) {
+        const rowLabel = document.createElement("div");
+        rowLabel.className = "heatmap-label";
+        rowLabel.textContent = dayLabels[dow];
+        container.appendChild(rowLabel);
+
+        for (let h = 0; h < 24; h++) {
+            const cell = document.createElement("div");
+            cell.className = "heatmap-cell";
+            const count = (grid[dow] && grid[dow][h]) || 0;
+            const intensity = maxCount > 0 ? count / maxCount : 0;
+            // Interpolate from transparent dark to accent color
+            const r = Math.round(233 * intensity);
+            const g = Math.round(69 * intensity);
+            const b = Math.round(96 * intensity);
+            cell.style.backgroundColor = `rgba(${r}, ${g}, ${b}, ${Math.max(intensity, 0.08)})`;
+            cell.title = `${dayLabels[dow]} ${h}:00 — ${count} messages`;
+            container.appendChild(cell);
+        }
+    }
+}
+
+/**
+ * Render a horizontal bar chart for vocabulary diversity (TTR).
+ */
+function renderVocabularyDiversity(canvasId, data) {
     const canvas = document.getElementById(canvasId);
-    if (!canvas) return;
-    const total = (data.short || 0) + (data.medium || 0) + (data.long || 0);
-    if (!total) return;
+    if (!canvas || !data.length) return;
 
     new Chart(canvas, {
-        type: "doughnut",
+        type: "bar",
         data: {
-            labels: ["Short (<50)", "Medium (50-200)", "Long (>200)"],
+            labels: data.map(d => d.display_name),
             datasets: [{
-                data: [data.short, data.medium, data.long],
-                backgroundColor: [COLORS.bars[3], COLORS.bars[0], COLORS.bars[1]],
-                borderWidth: 0,
+                data: data.map(d => d.ttr),
+                backgroundColor: COLORS.bars.slice(0, data.length),
+                borderRadius: 4,
             }],
         },
         options: {
-            plugins: {
-                legend: { display: true, position: "bottom", labels: { color: COLORS.text } },
+            indexAxis: "y",
+            scales: {
+                x: {
+                    grid: { display: false },
+                    title: { display: true, text: "Type-Token Ratio", color: COLORS.text },
+                    min: 0,
+                    max: 1,
+                },
+                y: { grid: { display: false } },
             },
         },
     });
@@ -214,16 +243,16 @@ document.addEventListener("DOMContentLoaded", () => {
     /* Parse data from HTML data attributes (avoids inline script XSS) */
     const dataEl = document.getElementById("chart-data");
     const topUsersData = JSON.parse(dataEl.dataset.topUsers);
-    const topChannelsData = JSON.parse(dataEl.dataset.topChannels);
     const activityData = JSON.parse(dataEl.dataset.activity);
     const topWordsData = JSON.parse(dataEl.dataset.topWords);
     const profanityData = JSON.parse(dataEl.dataset.profanity);
-    const messageLengthsData = JSON.parse(dataEl.dataset.messageLengths);
+    const heatmapData = JSON.parse(dataEl.dataset.heatmap);
+    const vocabularyData = JSON.parse(dataEl.dataset.vocabulary);
 
     renderTopUsers("topUsersChart", topUsersData);
-    renderTopChannels("topChannelsChart", topChannelsData);
     renderActivity("activityChart", activityData);
     renderTopWords("topWordsChart", topWordsData);
     renderProfanity("profanityChart", profanityData);
-    renderMessageLengths("messageLengthChart", messageLengthsData);
+    renderHeatmap("heatmapGrid", heatmapData);
+    renderVocabularyDiversity("vocabularyChart", vocabularyData);
 });

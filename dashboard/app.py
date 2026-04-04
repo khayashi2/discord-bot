@@ -13,21 +13,22 @@ from sqlalchemy import func, select
 from config import settings
 from dashboard.queries import (
     cutoff_from_range,
+    get_activity_heatmap,
     get_activity_over_time,
     get_all_members,
+    get_awards,
+    get_conversation_flow,
     get_emoji_stats,
-    get_message_length_stats,
     get_overview,
     get_profanity_leaderboard,
-    get_top_channels,
     get_top_users,
     get_top_words,
     get_user_activity_over_time,
     get_user_emoji_stats,
     get_user_message_count,
-    get_user_message_length_distribution,
-    get_user_top_channels,
+    get_user_top_profanity_words,
     get_user_top_words,
+    get_vocabulary_diversity,
 )
 from db.database import async_session
 from db.models import Member
@@ -55,18 +56,14 @@ _EMPTY_CONTEXT = {
         "messages_today": 0,
     },
     "top_users": [],
-    "top_channels": [],
     "activity": [],
     "top_words": [],
     "emoji": {"total_emoji": 0, "msgs_with_emoji": 0, "top_emoji": []},
     "profanity": [],
-    "message_lengths": {
-        "avg_length": 0,
-        "max_length": 0,
-        "short": 0,
-        "medium": 0,
-        "long": 0,
-    },
+    "heatmap": [],
+    "awards": [],
+    "vocabulary": [],
+    "conversation_flow": [],
 }
 
 
@@ -82,12 +79,14 @@ async def index(
             context = {
                 "overview": await get_overview(session, after=after),
                 "top_users": await get_top_users(session, after=after),
-                "top_channels": await get_top_channels(session, after=after),
                 "activity": await get_activity_over_time(session, after=after),
                 "top_words": await get_top_words(session, after=after),
                 "emoji": await get_emoji_stats(session, after=after),
                 "profanity": await get_profanity_leaderboard(session, after=after),
-                "message_lengths": await get_message_length_stats(session, after=after),
+                "heatmap": await get_activity_heatmap(session, after=after),
+                "awards": await get_awards(session, after=after),
+                "vocabulary": await get_vocabulary_diversity(session, after=after),
+                "conversation_flow": await get_conversation_flow(session, after=after),
             }
     except Exception:
         logger.exception("Failed to load dashboard data")
@@ -96,7 +95,12 @@ async def index(
     return templates.TemplateResponse(
         request=request,
         name="index.html",
-        context={"title": "Discord Analytics", "active_range": active_range, **context},
+        context={
+            "title": "Discord Analytics",
+            "active_range": active_range,
+            "profanity_words_list": sorted(settings.load_profanity_words()),
+            **context,
+        },
     )
 
 
@@ -132,11 +136,10 @@ async def user_stats_api(member_id: int) -> dict:
                 "top_words": await get_user_top_words(session, member_id),
                 "message_count": await get_user_message_count(session, member_id),
                 "activity": await get_user_activity_over_time(session, member_id),
-                "top_channels": await get_user_top_channels(session, member_id),
-                "message_lengths": await get_user_message_length_distribution(
+                "emoji_stats": await get_user_emoji_stats(session, member_id),
+                "profanity_words": await get_user_top_profanity_words(
                     session, member_id
                 ),
-                "emoji_stats": await get_user_emoji_stats(session, member_id),
             }
         except Exception:
             logger.exception("Failed to load user stats for member %d", member_id)
@@ -144,13 +147,7 @@ async def user_stats_api(member_id: int) -> dict:
                 "top_words": [],
                 "message_count": 0,
                 "activity": [],
-                "top_channels": [],
-                "message_lengths": {
-                    "avg_length": 0,
-                    "short": 0,
-                    "medium": 0,
-                    "long": 0,
-                },
+                "profanity_words": [],
                 "emoji_stats": {
                     "total_emoji": 0,
                     "msgs_with_emoji": 0,
