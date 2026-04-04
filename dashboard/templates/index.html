@@ -1,10 +1,109 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="grid">
-    <div class="card">
-        <h2>Server Overview</h2>
-        <p>Dashboard is running. Analytics will appear here once data is ingested.</p>
+<!-- Overview stat cards -->
+<div class="stats-row">
+    <div class="stat-card">
+        <div class="stat-value">{{ overview.total_messages | default(0) }}</div>
+        <div class="stat-label">Total Messages</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ overview.total_members | default(0) }}</div>
+        <div class="stat-label">Members</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ overview.total_channels | default(0) }}</div>
+        <div class="stat-label">Channels</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ overview.messages_today | default(0) }}</div>
+        <div class="stat-label">Messages Today</div>
     </div>
 </div>
+
+<!-- Activity over time -->
+<div class="card">
+    <h2>Activity (Last 30 Days)</h2>
+    {% if activity %}
+        <canvas id="activityChart"></canvas>
+    {% else %}
+        <p class="empty-state">No activity data yet.</p>
+    {% endif %}
+</div>
+
+<!-- Top users & channels -->
+<div class="grid">
+    <div class="card">
+        <h2>Most Active Users</h2>
+        {% if top_users %}
+            <canvas id="topUsersChart"></canvas>
+        {% else %}
+            <p class="empty-state">No user data yet.</p>
+        {% endif %}
+    </div>
+    <div class="card">
+        <h2>Most Active Channels</h2>
+        {% if top_channels %}
+            <canvas id="topChannelsChart"></canvas>
+        {% else %}
+            <p class="empty-state">No channel data yet.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Top words & message length -->
+<div class="grid">
+    <div class="card">
+        <h2>Top Words</h2>
+        {% if top_words %}
+            <canvas id="topWordsChart"></canvas>
+        {% else %}
+            <p class="empty-state">No word data yet.</p>
+        {% endif %}
+    </div>
+    <div class="card">
+        <h2>Message Length Distribution</h2>
+        {% if msg_length and (msg_length.short or msg_length.medium or msg_length.long) %}
+            <canvas id="msgLengthChart"></canvas>
+            <p style="text-align:center; color:var(--text-secondary); margin-top:0.75rem; font-size:0.85rem;">
+                Avg: {{ msg_length.avg_length }} chars &middot; Max: {{ msg_length.max_length }} chars
+            </p>
+        {% else %}
+            <p class="empty-state">No message data yet.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Emoji stats -->
+<div class="card">
+    <h2>Emoji Usage</h2>
+    {% if emoji and emoji.total_emoji > 0 %}
+        <p style="color:var(--text-secondary); margin-bottom:0.75rem;">
+            {{ emoji.total_emoji }} total emoji in {{ emoji.msgs_with_emoji }} messages
+        </p>
+        {% if emoji.top_emoji %}
+            <div class="emoji-list">
+                {% for e in emoji.top_emoji %}
+                    <div class="emoji-item">
+                        <span>{{ e.emoji }}</span>
+                        <span class="emoji-count">&times;{{ e.count }}</span>
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% else %}
+        <p class="empty-state">No emoji data yet.</p>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<div id="chart-data"
+    data-top-users="{{ top_users | tojson }}"
+    data-top-channels="{{ top_channels | tojson }}"
+    data-activity="{{ activity | tojson }}"
+    data-top-words="{{ top_words | tojson }}"
+    data-msg-length="{{ msg_length | tojson }}"
+    hidden></div>
+<script src="/static/dashboard.js"></script>
 {% endblock %}
