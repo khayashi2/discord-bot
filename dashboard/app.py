@@ -17,14 +17,18 @@ from dashboard.queries import (
     get_activity_over_time,
     get_all_members,
     get_awards,
+    get_channel_activity,
     get_conversation_flow,
+    get_digest,
     get_emoji_stats,
     get_overview,
     get_peak_hours,
     get_profanity_leaderboard,
     get_reaction_time_kings,
+    get_sentiment_trend,
     get_top_users,
     get_top_words,
+    get_unique_users_over_time,
     get_user_activity_over_time,
     get_user_emoji_stats,
     get_user_message_count,
@@ -33,6 +37,7 @@ from dashboard.queries import (
     get_user_top_words,
     get_user_vocabulary_diversity,
     get_vocabulary_diversity,
+    get_word_cloud_data,
 )
 from db.database import async_session
 from db.models import Member
@@ -70,6 +75,24 @@ _EMPTY_CONTEXT = {
     "conversation_flow": [],
     "peak_hours": [],
     "reaction_time": [],
+    "channel_activity": [],
+    "digest": {
+        "today_msgs": 0,
+        "yesterday_msgs": 0,
+        "msg_delta_pct": 0,
+        "today_users": 0,
+        "yesterday_users": 0,
+        "user_delta_pct": 0,
+        "week_msgs": 0,
+        "last_week_msgs": 0,
+        "week_msg_delta_pct": 0,
+        "week_users": 0,
+        "last_week_users": 0,
+        "week_user_delta_pct": 0,
+    },
+    "growth": [],
+    "word_cloud": [],
+    "sentiment": [],
 }
 
 
@@ -95,6 +118,11 @@ async def index(
                 "conversation_flow": await get_conversation_flow(session, after=after),
                 "peak_hours": await get_peak_hours(session, after=after),
                 "reaction_time": await get_reaction_time_kings(session, after=after),
+                "channel_activity": await get_channel_activity(session, after=after),
+                "digest": await get_digest(session),
+                "growth": await get_unique_users_over_time(session, after=after),
+                "word_cloud": await get_word_cloud_data(session, after=after),
+                "sentiment": await get_sentiment_trend(session, after=after),
             }
     except Exception:
         logger.exception("Failed to load dashboard data")

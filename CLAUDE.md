@@ -9,7 +9,7 @@ A Discord bot that tracks server activity and displays fun analytics (top words,
 - Python 3.12
 - discord.py v2
 - PostgreSQL 16 (via Docker)
-- FastAPI + Jinja2 + Chart.js (dashboard)
+- FastAPI + Jinja2 + Chart.js + wordcloud2.js + Tom Select (dashboard)
 - SQLAlchemy 2.0 + Alembic (ORM & migrations)
 - Docker & Docker Compose
 - GitHub Actions (CI/CD)
@@ -58,6 +58,14 @@ A Discord bot that tracks server activity and displays fun analytics (top words,
 - Per-user vocabulary diversity — `get_user_vocabulary_diversity()` computes TTR for a single user; returns `{"ttr", "unique_words", "total_words"}`; minimum 10 words threshold (returns `total_words: 0` when under threshold)
 - Sticky user header — `IntersectionObserver` on the user selector card triggers a fixed header showing the selected user's display name when scrolling past the selector
 - Removed panels — Message Lengths and Most Active Channels were removed from both the landing page and user page to focus on more engaging analytics. The query functions (`get_message_length_stats`, `get_top_channels`, `get_user_message_length_distribution`, `get_user_top_channels`) still exist in `queries.py` but are no longer called from `app.py`
+- Channel activity list — `get_channel_activity()` uses `LEFT JOIN` with `MAX(created_at)` to show all indexed channels with message count and last active date; server-rendered table
+- Daily/weekly digest — `get_digest()` computes today-vs-yesterday and this-week-vs-last-week deltas for messages and active users; no `after` param (always relative to now)
+- Server growth timeline — `get_unique_users_over_time()` uses `COUNT(DISTINCT author_id)` grouped by UTC day (consistent with `get_activity_over_time`); fills zero-days for a continuous line chart
+- Word cloud — `get_word_cloud_data()` returns 80 words (larger set than `get_top_words`); rendered via wordcloud2.js CDN with `requestAnimationFrame` to handle dynamic container sizing
+- Message sentiment trend — `get_sentiment_trend()` uses module-level `POSITIVE_WORDS`/`NEGATIVE_WORDS` frozensets (~20 words each); Python-side keyword counting over 5,000 recent messages; dual-line Chart.js chart
+- "Who Talks to Whom" network — adjacency heatmap grid rendered from `get_conversation_flow()` data; toggle button switches between visual heatmap and text table in the same card
+- Customizable dashboard block — `VIZ_REGISTRY` pattern maps visualization keys to `{label, dataKey, render, type}` objects; Tom Select dropdown with localStorage persistence; appears on both landing page and user stats page with separate registries
+- CDN dependencies — wordcloud2.js and Tom Select CSS/JS loaded in `base.html` for shared use; Tom Select dark theme overrides in base styles
 
 ## Running Locally
 
@@ -214,6 +222,60 @@ The `get_user_vocabulary_diversity()` query computes TTR for a single user. Key 
 - **Stat cards, not a chart** — since it's a single user's data (not a ranking), the panel shows three stat cards (TTR Score, Unique Words, Total Words) rather than a bar chart with one bar.
 - **Under-threshold handling** — returns `total_words: 0` when fewer than 10 words are found. The client checks `total_words > 0` to decide whether to show stats or the empty state. This keeps the threshold logic coupled between server and client via a single zero/non-zero contract.
 - **TTR description on both pages** — the landing page and user page both display "Type-Token Ratio (TTR) = unique words / total words. Higher ratio = more diverse vocabulary." to help users understand the metric.
+
+### Channel Activity List
+
+The `get_channel_activity()` query returns all indexed channels with message counts and last active dates. Key choices:
+
+- **LEFT JOIN for completeness** — uses `outerjoin` so channels with zero messages still appear. When a time filter is active, the `WHERE` clause includes `OR Message.created_at IS NULL` to preserve empty channels in the result.
+- **Server-rendered table** — follows the same `<table>` pattern as conversation flow. No JavaScript needed.
+
+### Daily/Weekly Digest
+
+The `get_digest()` function computes today-vs-yesterday and this-week-vs-last-week deltas. Key choices:
+
+- **No `after` parameter** — the digest is always relative to "now" regardless of the dashboard time filter, since "today vs yesterday" is inherently a fixed window.
+- **Week boundaries** — "this week" starts on Monday (computed via `today - today.weekday()`), consistent with ISO week numbering.
+- **Division-by-zero handling** — when the comparison period has zero activity, `_pct()` returns +100% if there's any current activity, or 0% if both are zero.
+
+### Server Growth Timeline
+
+The `get_unique_users_over_time()` query counts distinct active users per day. Key choices:
+
+- **UTC day boundaries** — uses `date_trunc("day", Message.created_at)` in UTC, consistent with `get_activity_over_time()`. Pacific Time is used for hour-of-day analytics (heatmap, peak hours) where the timezone matters, but daily aggregation works in UTC since the fill range is also UTC-based — using Pacific for one and UTC for the other would cause a day-key mismatch near midnight.
+- **Zero-day fill** — same pattern as `get_activity_over_time()`: builds a lookup from query results, then iterates every day in the range, filling missing days with zero.
+
+### Word Cloud
+
+The `get_word_cloud_data()` query returns 80 words for visual density. Key choices:
+
+- **Reuses `get_top_words` logic** — same `_clean_content()`, `WORD_PATTERN`, and stopword filtering with a higher `limit` parameter.
+- **wordcloud2.js via CDN** — lightweight (~15KB), no build system needed. `requestAnimationFrame` defers rendering so the browser finishes layout before measuring the container — this prevents a zero-width crash when the canvas is created dynamically inside the custom block.
+
+### Message Sentiment Trend
+
+The `get_sentiment_trend()` query uses simple keyword lists for sentiment analysis. Key choices:
+
+- **Module-level frozensets** — `POSITIVE_WORDS` and `NEGATIVE_WORDS` (~20 words each) are defined at module level for O(1) lookups, following the same pattern as `STOPWORDS`.
+- **Dual-line chart** — shows both positive and negative counts (not a single score), so users can see whether a drop in sentiment is from fewer positive words or more negative ones.
+- **Disclaimer text** — the template includes "Based on simple keyword matching — approximate, not AI-powered" to set expectations.
+
+### "Who Talks to Whom" Network
+
+The conversation flow card now includes a visual adjacency heatmap alongside the text table. Key choices:
+
+- **Toggle button, not replacement** — two `<button>` elements with a `toggleConvView()` function switch visibility between the heatmap `<div>` and the table `<div>`. Both are rendered on page load.
+- **Table-based heatmap** — the network uses an HTML `<table>` (not CSS grid) because the number of rows/columns is dynamic (depends on how many users are in the conversation flow data). The heatmap uses the same color interpolation pattern as the activity heatmap.
+- **Username truncation** — long display names are truncated with an ellipsis in the grid headers, with the full name available in the `title` attribute tooltip.
+
+### Customizable Dashboard Block
+
+Both the landing page and user stats page include a "Custom View" block with a Tom Select dropdown. Key choices:
+
+- **VIZ_REGISTRY pattern** — a plain object mapping string keys to `{label, dataKey, render, type}` entries. Adding a new visualization requires one new registry entry — no template or route changes needed.
+- **Separate registries per page** — the landing page uses `VIZ_REGISTRY` (11 server-wide visualizations), the user page uses `USER_VIZ_REGISTRY` (5 per-user visualizations). Each has its own localStorage key (`dashboard-custom-viz` vs `user-custom-viz`).
+- **Chart cleanup** — a module-level `customChartInstance` variable tracks the current Chart.js instance. Before re-rendering, `destroy()` is called to prevent memory leaks from orphaned chart canvases.
+- **Container type handling** — `canvas`-type renders create a `<canvas>` element, while `div`-type renders (heatmap, network) create a plain `<div>`. The heatmap gets a `.heatmap-grid` CSS class; the network does not, since it builds its own table internally.
 
 ## Coding Standards and Best Practices
 
