@@ -1,6 +1,43 @@
 {% extends "base.html" %}
 
+{% block extra_head %}
+<style>
+    .range-picker {
+        display: flex;
+        gap: 0.5rem;
+        margin-bottom: 1.5rem;
+    }
+    .range-picker a {
+        padding: 0.4rem 1rem;
+        border-radius: 8px;
+        background: var(--bg-secondary);
+        color: var(--text-secondary);
+        text-decoration: none;
+        font-size: 0.85rem;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        transition: background 0.2s, color 0.2s;
+    }
+    .range-picker a:hover {
+        color: var(--text-primary);
+        border-color: var(--accent);
+    }
+    .range-picker a.active {
+        background: var(--accent);
+        color: #fff;
+        border-color: var(--accent);
+    }
+</style>
+{% endblock %}
+
 {% block content %}
+<!-- Time range filter -->
+<div class="range-picker">
+    <a href="/?range=7d" {% if active_range == '7d' %}class="active"{% endif %}>7 Days</a>
+    <a href="/?range=30d" {% if active_range == '30d' %}class="active"{% endif %}>30 Days</a>
+    <a href="/?range=90d" {% if active_range == '90d' %}class="active"{% endif %}>90 Days</a>
+    <a href="/" {% if not active_range %}class="active"{% endif %}>All Time</a>
+</div>
+
 <!-- Overview stat cards -->
 <div class="stats-row">
     <div class="stat-card">
@@ -23,7 +60,7 @@
 
 <!-- Activity over time -->
 <div class="card">
-    <h2>Activity (Last 30 Days)</h2>
+    <h2>Activity{% if active_range %} (Last {{ active_range }}){% else %} (Last 30 Days){% endif %}</h2>
     {% if activity %}
         <canvas id="activityChart"></canvas>
     {% else %}
@@ -71,26 +108,39 @@
     </div>
 </div>
 
-<!-- Emoji stats -->
-<div class="card">
-    <h2>Emoji Usage</h2>
-    {% if emoji and emoji.total_emoji > 0 %}
-        <p style="color:var(--text-secondary); margin-bottom:0.75rem;">
-            {{ emoji.total_emoji }} total emoji in {{ emoji.msgs_with_emoji }} messages
-        </p>
-        {% if emoji.top_emoji %}
-            <div class="emoji-list">
-                {% for e in emoji.top_emoji %}
-                    <div class="emoji-item">
-                        <span>{{ e.emoji }}</span>
-                        <span class="emoji-count">&times;{{ e.count }}</span>
-                    </div>
-                {% endfor %}
-            </div>
+<!-- Message lengths & emoji stats -->
+<div class="grid">
+    <div class="card">
+        <h2>Message Lengths</h2>
+        {% if message_lengths and message_lengths.short + message_lengths.medium + message_lengths.long > 0 %}
+            <p style="color:var(--text-secondary); margin-bottom:0.75rem;">
+                Avg: {{ message_lengths.avg_length }} chars | Max: {{ message_lengths.max_length }} chars
+            </p>
+            <canvas id="messageLengthChart"></canvas>
+        {% else %}
+            <p class="empty-state">No message data yet.</p>
         {% endif %}
-    {% else %}
-        <p class="empty-state">No emoji data yet.</p>
-    {% endif %}
+    </div>
+    <div class="card">
+        <h2>Emoji Usage</h2>
+        {% if emoji and emoji.total_emoji > 0 %}
+            <p style="color:var(--text-secondary); margin-bottom:0.75rem;">
+                {{ emoji.total_emoji }} total emoji in {{ emoji.msgs_with_emoji }} messages
+            </p>
+            {% if emoji.top_emoji %}
+                <div class="emoji-list">
+                    {% for e in emoji.top_emoji %}
+                        <div class="emoji-item">
+                            <span>{{ e.emoji }}</span>
+                            <span class="emoji-count">&times;{{ e.count }}</span>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% else %}
+            <p class="empty-state">No emoji data yet.</p>
+        {% endif %}
+    </div>
 </div>
 {% endblock %}
 
@@ -101,6 +151,7 @@
     data-activity='{{ activity | tojson }}'
     data-top-words='{{ top_words | tojson }}'
     data-profanity='{{ profanity | tojson }}'
+    data-message-lengths='{{ message_lengths | tojson }}'
     hidden></div>
 <script src="/static/dashboard.js"></script>
 {% endblock %}

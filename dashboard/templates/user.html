@@ -38,7 +38,7 @@
 {% block content %}
 <div class="card">
     <h2>Select a User</h2>
-    <select id="user-select" placeholder="Search for a user...">
+    <select id="user-select">
         <option value="">Choose a user...</option>
         {% for m in members %}
             <option value="{{ m.id }}">{{ m.display_name }}</option>
@@ -52,8 +52,24 @@
             <div class="stat-value" id="user-msg-count">0</div>
             <div class="stat-label">Messages Sent</div>
         </div>
+        <div class="stat-card">
+            <div class="stat-value" id="user-avg-length">0</div>
+            <div class="stat-label">Avg Message Length</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="user-total-emoji">0</div>
+            <div class="stat-label">Total Emoji Used</div>
+        </div>
     </div>
 
+    <!-- Activity over time -->
+    <div class="card">
+        <h2>Activity (Last 30 Days)</h2>
+        <canvas id="userActivityChart"></canvas>
+        <p id="userActivityEmpty" class="empty-state" style="display: none;">No activity data yet.</p>
+    </div>
+
+    <!-- Top words & top channels -->
     <div class="grid">
         <div class="card">
             <h2>Top 10 Words</h2>
@@ -61,7 +77,21 @@
             <p id="userWordsEmpty" class="empty-state" style="display: none;">No word data yet.</p>
         </div>
         <div class="card">
-            <h2>Top 3 Emoji</h2>
+            <h2>Top Channels</h2>
+            <canvas id="userChannelsChart"></canvas>
+            <p id="userChannelsEmpty" class="empty-state" style="display: none;">No channel data yet.</p>
+        </div>
+    </div>
+
+    <!-- Message lengths & emoji -->
+    <div class="grid">
+        <div class="card">
+            <h2>Message Lengths</h2>
+            <canvas id="userLengthChart"></canvas>
+            <p id="userLengthEmpty" class="empty-state" style="display: none;">No message data yet.</p>
+        </div>
+        <div class="card">
+            <h2>Top Emoji</h2>
             <div id="userEmojiList" class="emoji-list"></div>
             <p id="userEmojiEmpty" class="empty-state" style="display: none;">No emoji data yet.</p>
         </div>
