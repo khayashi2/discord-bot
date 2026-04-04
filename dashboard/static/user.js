@@ -49,8 +49,13 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!value) {
             document.getElementById("user-stats").style.display = "none";
             document.getElementById("user-empty").style.display = "block";
+            document.getElementById("user-display-name").textContent = "--";
             return;
         }
+
+        const option = select.options[value];
+        const displayName = option ? option.text : "--";
+        document.getElementById("user-display-name").textContent = displayName;
 
         try {
             const resp = await fetch(`/api/user/${value}`);

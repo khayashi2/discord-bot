@@ -20,7 +20,9 @@ from dashboard.queries import (
     get_conversation_flow,
     get_emoji_stats,
     get_overview,
+    get_peak_hours,
     get_profanity_leaderboard,
+    get_reaction_time_kings,
     get_top_users,
     get_top_words,
     get_user_activity_over_time,
@@ -64,6 +66,8 @@ _EMPTY_CONTEXT = {
     "awards": [],
     "vocabulary": [],
     "conversation_flow": [],
+    "peak_hours": [],
+    "reaction_time": [],
 }
 
 
@@ -87,6 +91,8 @@ async def index(
                 "awards": await get_awards(session, after=after),
                 "vocabulary": await get_vocabulary_diversity(session, after=after),
                 "conversation_flow": await get_conversation_flow(session, after=after),
+                "peak_hours": await get_peak_hours(session, after=after),
+                "reaction_time": await get_reaction_time_kings(session, after=after),
             }
     except Exception:
         logger.exception("Failed to load dashboard data")

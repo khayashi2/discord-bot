@@ -238,6 +238,69 @@ function renderVocabularyDiversity(canvasId, data) {
     });
 }
 
+/**
+ * Render a vertical bar chart for peak hours (messages per hour of day).
+ */
+function renderPeakHours(canvasId, data) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas || !data.length) return;
+
+    new Chart(canvas, {
+        type: "bar",
+        data: {
+            labels: data.map(d => `${d.hour}:00`),
+            datasets: [{
+                data: data.map(d => d.count),
+                backgroundColor: COLORS.accent,
+                borderRadius: 4,
+            }],
+        },
+        options: {
+            scales: {
+                x: {
+                    grid: { display: false },
+                    title: { display: true, text: "Hour (UTC)", color: COLORS.text },
+                },
+                y: {
+                    beginAtZero: true,
+                    grid: { color: COLORS.grid },
+                    title: { display: true, text: "Messages", color: COLORS.text },
+                },
+            },
+        },
+    });
+}
+
+/**
+ * Render a horizontal bar chart for reaction time kings.
+ */
+function renderReactionTime(canvasId, data) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas || !data.length) return;
+
+    new Chart(canvas, {
+        type: "bar",
+        data: {
+            labels: data.map(d => d.display_name),
+            datasets: [{
+                data: data.map(d => d.avg_seconds),
+                backgroundColor: COLORS.bars.slice(0, data.length),
+                borderRadius: 4,
+            }],
+        },
+        options: {
+            indexAxis: "y",
+            scales: {
+                x: {
+                    grid: { display: false },
+                    title: { display: true, text: "Avg Response Time (seconds)", color: COLORS.text },
+                },
+                y: { grid: { display: false } },
+            },
+        },
+    });
+}
+
 /* Initialize charts once the DOM is ready */
 document.addEventListener("DOMContentLoaded", () => {
     /* Parse data from HTML data attributes (avoids inline script XSS) */
@@ -248,6 +311,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const profanityData = JSON.parse(dataEl.dataset.profanity);
     const heatmapData = JSON.parse(dataEl.dataset.heatmap);
     const vocabularyData = JSON.parse(dataEl.dataset.vocabulary);
+    const peakHoursData = JSON.parse(dataEl.dataset.peakHours);
+    const reactionTimeData = JSON.parse(dataEl.dataset.reactionTime);
 
     renderTopUsers("topUsersChart", topUsersData);
     renderActivity("activityChart", activityData);
@@ -255,4 +320,6 @@ document.addEventListener("DOMContentLoaded", () => {
     renderProfanity("profanityChart", profanityData);
     renderHeatmap("heatmapGrid", heatmapData);
     renderVocabularyDiversity("vocabularyChart", vocabularyData);
+    renderPeakHours("peakHoursChart", peakHoursData);
+    renderReactionTime("reactionTimeChart", reactionTimeData);
 });
