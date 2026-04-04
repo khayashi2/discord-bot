@@ -64,7 +64,8 @@ A Discord bot that tracks server activity and displays fun analytics (top words,
 - Word cloud — `get_word_cloud_data()` returns 80 words (larger set than `get_top_words`); rendered via wordcloud2.js CDN with `requestAnimationFrame` to handle dynamic container sizing
 - Message sentiment trend — `get_sentiment_trend()` uses module-level `POSITIVE_WORDS`/`NEGATIVE_WORDS` frozensets (~20 words each); Python-side keyword counting over 5,000 recent messages; dual-line Chart.js chart
 - "Who Talks to Whom" network — adjacency heatmap grid rendered from `get_conversation_flow()` data; toggle button switches between visual heatmap and text table in the same card
-- Customizable dashboard block — `VIZ_REGISTRY` pattern maps visualization keys to `{label, dataKey, render, type}` objects; Tom Select dropdown with localStorage persistence; appears on both landing page and user stats page with separate registries
+- Customizable dashboard block — `VIZ_REGISTRY` pattern maps visualization keys to `{label, dataKey, render, type}` objects; Tom Select dropdown with localStorage persistence; heading dynamically shows selected viz name; `top-users` excluded from registry (already a static card); appears on both landing page and user stats page with separate registries
+- Streamlined landing page — simplified to: digest, overview stats, channel activity, activity chart, most active users (standalone full-width card), custom view dropdown, awards & superlatives; all other visualizations (word cloud, top words, profanity, emoji, sentiment, heatmap, vocabulary, conversation flow, peak hours, reaction time, server growth) accessible only via Custom View
 - CDN dependencies — wordcloud2.js and Tom Select CSS/JS loaded in `base.html` for shared use; Tom Select dark theme overrides in base styles
 
 ## Running Locally
@@ -270,10 +271,12 @@ The conversation flow card now includes a visual adjacency heatmap alongside the
 
 ### Customizable Dashboard Block
 
-Both the landing page and user stats page include a "Custom View" block with a Tom Select dropdown. Key choices:
+Both the landing page and user stats page include a Custom View block with a Tom Select dropdown. The card heading dynamically shows the selected visualization name instead of a static "Custom View" label. Key choices:
 
 - **VIZ_REGISTRY pattern** — a plain object mapping string keys to `{label, dataKey, render, type}` entries. Adding a new visualization requires one new registry entry — no template or route changes needed.
-- **Separate registries per page** — the landing page uses `VIZ_REGISTRY` (11 server-wide visualizations), the user page uses `USER_VIZ_REGISTRY` (5 per-user visualizations). Each has its own localStorage key (`dashboard-custom-viz` vs `user-custom-viz`).
+- **No duplication with static cards** — visualizations already rendered as permanent cards on the page (e.g., Most Active Users) are excluded from the registry to avoid showing the same chart twice.
+- **Dynamic heading** — `initCustomBlock()` updates `#custom-block-heading` text on initial load and on every dropdown change; resets to "Custom View" if the selection is cleared.
+- **Separate registries per page** — the landing page uses `VIZ_REGISTRY` (10 server-wide visualizations), the user page uses `USER_VIZ_REGISTRY` (5 per-user visualizations). Each has its own localStorage key (`dashboard-custom-viz` vs `user-custom-viz`).
 - **Chart cleanup** — a module-level `customChartInstance` variable tracks the current Chart.js instance. Before re-rendering, `destroy()` is called to prevent memory leaks from orphaned chart canvases.
 - **Container type handling** — `canvas`-type renders create a `<canvas>` element, while `div`-type renders (heatmap, network) create a plain `<div>`. The heatmap gets a `.heatmap-grid` CSS class; the network does not, since it builds its own table internally.
 

@@ -218,10 +218,6 @@ async def test_index_returns_html_with_data():
         # Check chart canvases are present
         assert 'id="activityChart"' in html
         assert 'id="topUsersChart"' in html
-        assert 'id="topWordsChart"' in html
-        assert 'id="profanityChart"' in html
-        assert 'id="peakHoursChart"' in html
-        assert 'id="reactionTimeChart"' in html
 
         # Check data is injected as JSON for Chart.js
         assert "discord" in html  # top word

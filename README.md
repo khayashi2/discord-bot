@@ -15,8 +15,8 @@ A Discord bot that tracks server activity and displays fun analytics on a web da
 - **Live Message Tracking** — the bot listens to every message in your server and stores it in PostgreSQL (content, author, channel, emoji count, attachments, and more)
 - **Upsert Strategy** — channels and members are automatically upserted so metadata stays fresh without duplicates
 - **Historical Backfill** — a one-off script ingests all past messages from every text channel, with batched commits and per-channel error handling
-- **Web Dashboard** — a FastAPI-powered analytics dashboard with Chart.js visualizations: overview stats, most active users, activity trend, top words, word cloud, emoji usage, profanity leaderboard, activity heatmap, awards & superlatives, vocabulary diversity, conversation flow (with visual/table toggle), peak hours, reaction time kings, channel activity list, server growth timeline, message sentiment trend, and a daily/weekly digest card
-- **Customizable Dashboard Block** — a dropdown (Tom Select) on both the landing page and user stats page where end-users can choose which visualization to display in a dedicated card; selection persists via localStorage
+- **Web Dashboard** — a FastAPI-powered analytics dashboard with a streamlined landing page: daily/weekly digest, overview stats, channel activity, activity trend, most active users, a customizable visualization block, and awards & superlatives. All other visualizations (word cloud, top words, profanity, emoji, sentiment, heatmap, vocabulary diversity, conversation flow, peak hours, reaction time kings, server growth) are accessible via the Custom View dropdown
+- **Customizable Dashboard Block** — a dropdown (Tom Select) on both the landing page and user stats page where end-users can choose which visualization to display; the card heading dynamically shows the selected visualization name (e.g., "Word Cloud" instead of "Custom View"); selection persists via localStorage
 - **Time-Filtered Analytics** — dashboard supports 7-day, 30-day, and 90-day time range filters so you can view activity over any recent window
 - **User Stats Page** — a dedicated per-user analytics page with a member dropdown, time-range filtering (7d/30d/90d), a sticky header showing the selected user as you scroll, and a custom view block; includes top words, activity over time, emoji usage, top profanity words, peak hours, and vocabulary diversity
 - **Profanity Leaderboard** — ranks users by profanity usage using a configurable word list (`config/profanity.txt`), with a collapsible reference showing all tracked words and per-user profanity breakdowns on the user stats page
@@ -52,7 +52,7 @@ Set up the discord.py bot that listens for new messages and inserts them in real
 
 ### Phase 5 — Dashboard (in progress)
 
-Build the API endpoints and frontend to visualize the trends. The dashboard is live with analytics panels (overview stats, digest, channel activity, top users, activity over time, server growth, top words, word cloud, emoji usage, profanity leaderboard, sentiment trend, activity heatmap, awards & superlatives, vocabulary diversity, conversation flow with visual/table toggle, peak hours, reaction time kings), time-range filtering (7d/30d/90d), a customizable view block with dropdown, and a dedicated per-user stats page with time filtering, peak hours, vocabulary diversity, profanity word breakdown, and its own custom view block.
+Build the API endpoints and frontend to visualize the trends. The dashboard is live with a streamlined landing page (digest, overview stats, channel activity, activity chart, most active users, custom view dropdown, awards) and all other visualizations accessible via the Custom View block. Includes time-range filtering (7d/30d/90d) and a dedicated per-user stats page with its own custom view block.
 
 ## Getting Started
 
@@ -350,11 +350,11 @@ This section documents the "why" behind key decisions — useful context if you'
 
 ### Customizable Dashboard Block
 
-**What:** A dropdown (Tom Select) on both the landing page and user stats page where end-users can select which visualization to display in a dedicated card. The selection persists via `localStorage`.
+**What:** A dropdown (Tom Select) on both the landing page and user stats page where end-users can select which visualization to display in a dedicated card. The card heading dynamically shows the name of the selected visualization (e.g., "Word Cloud" instead of a static "Custom View" label). The selection persists via `localStorage`.
 
-**Why:** Different users care about different metrics. Rather than making everyone scroll through every panel, the custom block lets each visitor pin their favorite visualization at the top of the page. It appears on both pages with separate localStorage keys and visualization registries.
+**Why:** The landing page was simplified to show only core stats (digest, overview, channel activity, activity chart, most active users, awards). All other visualizations — word cloud, top words, profanity, emoji, sentiment, heatmap, vocabulary diversity, conversation flow, peak hours, reaction time, server growth — are accessible through the Custom View dropdown. This keeps the page scannable while still giving users access to every metric.
 
-**Consider:** The implementation uses a `VIZ_REGISTRY` pattern — a plain object mapping keys to `{label, dataKey, render, type}`. Adding a new visualization to the dropdown only requires one new registry entry. Chart.js instances are tracked and properly destroyed before re-rendering to prevent memory leaks. The `div`-type renders (heatmap, network) need different container setup than `canvas`-type renders.
+**Consider:** The implementation uses a `VIZ_REGISTRY` pattern — a plain object mapping keys to `{label, dataKey, render, type}`. Adding a new visualization to the dropdown only requires one new registry entry. Visualizations that are already displayed as static cards on the page (like Most Active Users) are excluded from the registry to avoid duplication. Chart.js instances are tracked and properly destroyed before re-rendering to prevent memory leaks. The `div`-type renders (heatmap, network) need different container setup than `canvas`-type renders.
 
 ### Async Database Access
 

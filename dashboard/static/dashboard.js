@@ -534,7 +534,6 @@ const VIZ_REGISTRY = {
     "vocabulary":     { label: "Vocabulary Diversity",  dataKey: "vocabulary",        render: renderVocabularyDiversity, type: "canvas" },
     "profanity":      { label: "Profanity Board",      dataKey: "profanity",         render: renderProfanity,           type: "canvas" },
     "reaction-time":  { label: "Reaction Time Kings",  dataKey: "reactionTime",      render: renderReactionTime,        type: "canvas" },
-    "top-users":      { label: "Top Users",            dataKey: "topUsers",          render: renderTopUsers,            type: "canvas" },
     "heatmap":        { label: "Activity Heatmap",     dataKey: "heatmap",           render: renderHeatmap,             type: "div" },
     "network":        { label: "Who Talks to Whom",    dataKey: "conversationFlow",  render: renderConversationNetwork, type: "div" },
 };
@@ -542,6 +541,7 @@ const VIZ_REGISTRY = {
 function initCustomBlock() {
     const selectEl = document.getElementById("custom-viz-select");
     const container = document.getElementById("custom-viz-container");
+    const heading = document.getElementById("custom-block-heading");
     if (!selectEl || !container) return;
 
     // Populate options
@@ -562,11 +562,16 @@ function initCustomBlock() {
     const saved = localStorage.getItem("dashboard-custom-viz") || "word-cloud";
     ts.setValue(saved, true);
     renderCustomViz(saved, container);
+    if (heading && VIZ_REGISTRY[saved]) heading.textContent = VIZ_REGISTRY[saved].label;
 
     ts.on("change", (value) => {
-        if (!value) return;
+        if (!value) {
+            if (heading) heading.textContent = "Custom View";
+            return;
+        }
         localStorage.setItem("dashboard-custom-viz", value);
         renderCustomViz(value, container);
+        if (heading && VIZ_REGISTRY[value]) heading.textContent = VIZ_REGISTRY[value].label;
     });
 }
 
@@ -622,18 +627,8 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     /* Render static charts */
-    renderTopUsers("topUsersChart", allData.topUsers);
     renderActivity("activityChart", allData.activity);
-    renderTopWords("topWordsChart", allData.topWords);
-    renderProfanity("profanityChart", allData.profanity);
-    renderHeatmap("heatmapGrid", allData.heatmap);
-    renderVocabularyDiversity("vocabularyChart", allData.vocabulary);
-    renderPeakHours("peakHoursChart", allData.peakHours);
-    renderReactionTime("reactionTimeChart", allData.reactionTime);
-    renderGrowthTimeline("growthChart", allData.growth);
-    renderWordCloud("wordCloudCanvas", allData.wordCloud);
-    renderSentimentTrend("sentimentChart", allData.sentiment);
-    renderConversationNetwork("networkGrid", allData.conversationFlow);
+    renderTopUsers("topUsersChart", allData.topUsers);
 
     /* Initialize custom view block */
     initCustomBlock();

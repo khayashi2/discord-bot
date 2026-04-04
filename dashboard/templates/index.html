@@ -219,19 +219,6 @@
     </div>
 </div>
 
-<!-- Custom view block -->
-<div class="card" id="custom-block">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-        <h2 style="margin-bottom: 0;">Custom View</h2>
-        <select id="custom-viz-select" style="width: 240px;">
-            <option value="">Choose a visualization...</option>
-        </select>
-    </div>
-    <div id="custom-viz-container">
-        <p class="empty-state">Select a visualization above.</p>
-    </div>
-</div>
-
 <!-- Channel activity -->
 <div class="card">
     <h2>Channel Activity</h2>
@@ -263,175 +250,26 @@
     {% endif %}
 </div>
 
-<!-- Server growth timeline -->
+<!-- Most active users -->
 <div class="card">
-    <h2>Server Growth (Unique Active Users){% if active_range %} — Last {{ active_range }}{% endif %}</h2>
-    {% if growth %}
-        <canvas id="growthChart"></canvas>
+    <h2>Most Active Users</h2>
+    {% if top_users %}
+        <canvas id="topUsersChart"></canvas>
     {% else %}
-        <p class="empty-state">No growth data yet.</p>
+        <p class="empty-state">No user data yet.</p>
     {% endif %}
 </div>
 
-<!-- Top users & top words -->
-<div class="grid">
-    <div class="card">
-        <h2>Most Active Users</h2>
-        {% if top_users %}
-            <canvas id="topUsersChart"></canvas>
-        {% else %}
-            <p class="empty-state">No user data yet.</p>
-        {% endif %}
+<!-- Custom view block -->
+<div class="card" id="custom-block">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h2 id="custom-block-heading" style="margin-bottom: 0;">Custom View</h2>
+        <select id="custom-viz-select" style="width: 240px;">
+            <option value="">Choose a visualization...</option>
+        </select>
     </div>
-    <div class="card">
-        <h2>Top Words</h2>
-        {% if top_words %}
-            <canvas id="topWordsChart"></canvas>
-        {% else %}
-            <p class="empty-state">No word data yet.</p>
-        {% endif %}
-    </div>
-</div>
-
-<!-- Word cloud -->
-<div class="card">
-    <h2>Word Cloud</h2>
-    {% if word_cloud %}
-        <canvas id="wordCloudCanvas" width="800" height="350"></canvas>
-    {% else %}
-        <p class="empty-state">No word data yet.</p>
-    {% endif %}
-</div>
-
-<!-- Profanity leaderboard & emoji stats -->
-<div class="grid">
-    <div class="card">
-        <h2>Profanity Leaderboard</h2>
-        {% if profanity %}
-            <canvas id="profanityChart"></canvas>
-        {% else %}
-            <p class="empty-state">No profanity data yet.</p>
-        {% endif %}
-        {% if profanity_words_list %}
-        <details style="margin-top: 1rem;">
-            <summary style="cursor: pointer; color: var(--text-secondary); font-size: 0.85rem;">
-                View profanity word list ({{ profanity_words_list | length }} words)
-            </summary>
-            <div style="margin-top: 0.5rem; display: flex; flex-wrap: wrap; gap: 0.4rem;">
-                {% for word in profanity_words_list %}
-                    <span style="background: var(--bg-secondary); padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.8rem;">{{ word }}</span>
-                {% endfor %}
-            </div>
-        </details>
-        {% endif %}
-    </div>
-    <div class="card">
-        <h2>Emoji Usage</h2>
-        {% if emoji and emoji.total_emoji > 0 %}
-            <p style="color:var(--text-secondary); margin-bottom:0.75rem;">
-                {{ emoji.total_emoji }} total emoji in {{ emoji.msgs_with_emoji }} messages
-            </p>
-            {% if emoji.top_emoji %}
-                <div class="emoji-list">
-                    {% for e in emoji.top_emoji %}
-                        <div class="emoji-item">
-                            <span>{{ e.emoji }}</span>
-                            <span class="emoji-count">&times;{{ e.count }}</span>
-                        </div>
-                    {% endfor %}
-                </div>
-            {% endif %}
-        {% else %}
-            <p class="empty-state">No emoji data yet.</p>
-        {% endif %}
-    </div>
-</div>
-
-<!-- Sentiment trend -->
-<div class="card">
-    <h2>Message Sentiment Trend</h2>
-    <p style="color: var(--text-secondary); font-size: 0.8rem; margin-bottom: 0.75rem;">
-        Based on simple keyword matching &mdash; approximate, not AI-powered.
-    </p>
-    {% if sentiment %}
-        <canvas id="sentimentChart"></canvas>
-    {% else %}
-        <p class="empty-state">No sentiment data yet.</p>
-    {% endif %}
-</div>
-
-<!-- Activity heatmap -->
-<div class="card">
-    <h2>Activity Heatmap <span style="font-size: 0.75rem; color: var(--text-secondary); font-weight: normal;">(Pacific)</span></h2>
-    {% if heatmap %}
-        <div id="heatmapGrid" class="heatmap-grid"></div>
-    {% else %}
-        <p class="empty-state">No heatmap data yet.</p>
-    {% endif %}
-</div>
-
-<!-- Vocabulary diversity & conversation flow -->
-<div class="grid">
-    <div class="card">
-        <h2>Vocabulary Diversity</h2>
-        <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 0.75rem;">
-            Type-Token Ratio (TTR) = unique words / total words. Higher ratio = more diverse vocabulary.
-        </p>
-        {% if vocabulary %}
-            <canvas id="vocabularyChart"></canvas>
-        {% else %}
-            <p class="empty-state">No vocabulary data yet.</p>
-        {% endif %}
-    </div>
-    <div class="card">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-            <h2 style="margin-bottom: 0;">Who Talks to Whom</h2>
-            {% if conversation_flow %}
-            <div>
-                <button class="view-toggle active" id="network-btn" onclick="toggleConvView('network')">Visual</button>
-                <button class="view-toggle" id="table-btn" onclick="toggleConvView('table')">Table</button>
-            </div>
-            {% endif %}
-        </div>
-        {% if conversation_flow %}
-            <div id="networkGrid" class="network-grid"></div>
-            <div id="convFlowTable" style="display: none;">
-                <table class="flow-table">
-                    <thead><tr><th>From</th><th>To</th><th>Replies</th></tr></thead>
-                    <tbody>
-                        {% for flow in conversation_flow %}
-                            <tr>
-                                <td>{{ flow.from_user }}</td>
-                                <td>{{ flow.to_user }}</td>
-                                <td>{{ flow.count }}</td>
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        {% else %}
-            <p class="empty-state">No conversation data yet.</p>
-        {% endif %}
-    </div>
-</div>
-
-<!-- Peak hours & reaction time -->
-<div class="grid">
-    <div class="card">
-        <h2>Peak Hours <span style="font-size: 0.75rem; color: var(--text-secondary); font-weight: normal;">(Pacific)</span></h2>
-        {% if peak_hours %}
-            <canvas id="peakHoursChart"></canvas>
-        {% else %}
-            <p class="empty-state">No peak hours data yet.</p>
-        {% endif %}
-    </div>
-    <div class="card">
-        <h2>Reaction Time Kings</h2>
-        {% if reaction_time %}
-            <canvas id="reactionTimeChart"></canvas>
-        {% else %}
-            <p class="empty-state">No reaction time data yet.</p>
-        {% endif %}
+    <div id="custom-viz-container">
+        <p class="empty-state">Select a visualization above.</p>
     </div>
 </div>
 
