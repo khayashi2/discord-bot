@@ -8,7 +8,7 @@ from discord.ext import commands
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from db.database import async_session
-from db.models import Channel, Guild, Member, Message
+from db.models import Channel, Member, Message
 
 logger = logging.getLogger(__name__)
 
@@ -33,41 +33,20 @@ class Listener(commands.Cog):
         """Persist every non-DM message to the database."""
         if message.guild is None:
             return
+        if message.author.bot:
+            return
 
         async with async_session() as session:
-            await self._upsert_guild(session, message.guild)
             await self._upsert_channel(session, message.channel)
-            await self._upsert_member(session, message.author, message.guild)
+            await self._upsert_member(session, message.author)
             await self._insert_message(session, message)
             await session.commit()
-
-    async def _upsert_guild(self, session, guild: discord.Guild) -> None:
-        stmt = (
-            pg_insert(Guild)
-            .values(
-                id=guild.id,
-                name=guild.name,
-                icon_url=str(guild.icon.url) if guild.icon else None,
-                member_count=guild.member_count,
-                created_at=guild.created_at,
-            )
-            .on_conflict_do_update(
-                index_elements=[Guild.id],
-                set_=dict(
-                    name=guild.name,
-                    icon_url=str(guild.icon.url) if guild.icon else None,
-                    member_count=guild.member_count,
-                ),
-            )
-        )
-        await session.execute(stmt)
 
     async def _upsert_channel(self, session, channel: discord.abc.GuildChannel) -> None:
         stmt = (
             pg_insert(Channel)
             .values(
                 id=channel.id,
-                guild_id=channel.guild.id,
                 name=channel.name,
                 type=str(channel.type),
                 created_at=channel.created_at,
@@ -80,14 +59,13 @@ class Listener(commands.Cog):
         await session.execute(stmt)
 
     async def _upsert_member(
-        self, session, author: discord.Member | discord.User, guild: discord.Guild
+        self, session, author: discord.Member | discord.User
     ) -> None:
         member = author if isinstance(author, discord.Member) else None
         stmt = (
             pg_insert(Member)
             .values(
                 id=author.id,
-                guild_id=guild.id,
                 username=author.name,
                 display_name=author.display_name,
                 avatar_url=str(author.avatar.url) if author.avatar else None,
@@ -95,7 +73,7 @@ class Listener(commands.Cog):
                 joined_at=member.joined_at if member else None,
             )
             .on_conflict_do_update(
-                index_elements=[Member.id, Member.guild_id],
+                index_elements=[Member.id],
                 set_=dict(
                     username=author.name,
                     display_name=author.display_name,
@@ -114,7 +92,6 @@ class Listener(commands.Cog):
                 id=message.id,
                 channel_id=message.channel.id,
                 author_id=message.author.id,
-                author_guild_id=message.guild.id,
                 content=content,
                 content_length=len(content),
                 has_attachments=len(message.attachments) > 0,

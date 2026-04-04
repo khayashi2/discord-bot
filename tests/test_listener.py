@@ -10,8 +10,6 @@ from bot.cogs.listener import EMOJI_PATTERN, Listener
 
 def _make_message(
     *,
-    guild_id=1,
-    guild_name="Test Guild",
     channel_id=10,
     channel_name="general",
     author_id=100,
@@ -20,18 +18,10 @@ def _make_message(
     message_id=1000,
     is_bot=False,
 ):
-    """Build a fake discord.Message with nested guild/channel/author."""
-    guild = MagicMock()
-    guild.id = guild_id
-    guild.name = guild_name
-    guild.icon = None
-    guild.member_count = 5
-    guild.created_at = datetime(2024, 1, 1, tzinfo=UTC)
-
+    """Build a fake discord.Message with nested channel/author."""
     channel = MagicMock()
     channel.id = channel_id
     channel.name = channel_name
-    channel.guild = guild
     channel.type = "text"
     channel.created_at = datetime(2024, 1, 1, tzinfo=UTC)
 
@@ -45,7 +35,7 @@ def _make_message(
 
     message = MagicMock()
     message.id = message_id
-    message.guild = guild
+    message.guild = MagicMock()
     message.channel = channel
     message.author = author
     message.content = content
@@ -88,13 +78,24 @@ class TestListenerCog:
             mock_session.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_ignores_bot_messages(self):
+        """Messages from bots should be skipped."""
+        bot = MagicMock()
+        cog = Listener(bot)
+        message = _make_message(is_bot=True)
+        message.author.bot = True
+
+        with patch("bot.cogs.listener.async_session") as mock_session:
+            await cog.on_message(message)
+            mock_session.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_persists_guild_message(self):
         """A normal guild message should trigger DB upserts."""
         bot = MagicMock()
         cog = Listener(bot)
         message = _make_message()
 
-        cog._upsert_guild = AsyncMock()
         cog._upsert_channel = AsyncMock()
         cog._upsert_member = AsyncMock()
         cog._insert_message = AsyncMock()
@@ -107,7 +108,6 @@ class TestListenerCog:
 
             await cog.on_message(message)
 
-            cog._upsert_guild.assert_called_once()
             cog._upsert_channel.assert_called_once()
             cog._upsert_member.assert_called_once()
             cog._insert_message.assert_called_once()

@@ -38,7 +38,7 @@ Take an analytics plan (usually from the analytics-designer agent) and implement
    - Use `async def` for all route handlers
    - Get a session via the project's async session pattern
    - Return JSON for chart data endpoints
-   - Follow RESTful naming: `/api/guild/{guild_id}/analytics/<feature>`
+   - Follow RESTful naming: `/api/analytics/<feature>`
 
 2. **Write the SQLAlchemy query**:
    - Use SQLAlchemy 2.0 `select()` syntax — never legacy `Query`
@@ -59,7 +59,7 @@ Take an analytics plan (usually from the analytics-designer agent) and implement
 ## Code Quality Requirements
 - All database access must be async (`await`)
 - Never expose raw message content — only aggregated statistics
-- Handle edge cases: no data yet, single-member guilds, deleted channels
+- Handle edge cases: no data yet, single-member server, deleted channels
 - Keep templates DRY — extend base templates where possible
 - Use Chart.js responsive mode for all charts
 
