@@ -15,7 +15,7 @@ A Discord bot that tracks server activity and displays fun analytics on a web da
 - **Live Message Tracking** — the bot listens to every message in your server and stores it in PostgreSQL (content, author, channel, emoji count, attachments, and more)
 - **Upsert Strategy** — channels and members are automatically upserted so metadata stays fresh without duplicates
 - **Historical Backfill** — a one-off script ingests all past messages from every text channel, with batched commits and per-channel error handling
-- **Web Dashboard** — a FastAPI-powered dashboard to visualize analytics (work in progress)
+- **Web Dashboard** — a FastAPI-powered analytics dashboard with Chart.js visualizations: overview stats, most active users and channels, 30-day activity trend, top words, emoji usage, and message length distribution
 
 ## Plan
 
@@ -35,9 +35,9 @@ Write the script that connects to Discord, iterates through channels, and ingest
 
 Set up the discord.py bot that listens for new messages and inserts them in real time. This is a thin layer on top of what you already built.
 
-### Phase 5 — Dashboard
+### Phase 5 — Dashboard (in progress)
 
-Build the API endpoints and frontend to visualize the trends.
+Build the API endpoints and frontend to visualize the trends. The initial dashboard is live with seven analytics panels (overview stats, top users, top channels, activity over time, top words, emoji usage, message length distribution).
 
 ## Getting Started
 
@@ -92,8 +92,9 @@ ruff check .
 │       └── listener.py   # Live message listener & DB persistence
 ├── dashboard/            # Web dashboard (FastAPI)
 │   ├── app.py            # Dashboard entry point
+│   ├── queries.py        # Analytics queries (top users, words, emoji, etc.)
 │   ├── templates/        # Jinja2 HTML templates
-│   └── static/           # CSS, JS, images
+│   └── static/           # CSS, JS (Chart.js rendering)
 ├── db/                   # Database layer
 │   ├── models.py         # SQLAlchemy ORM models
 │   ├── database.py       # Async engine & session
@@ -156,6 +157,14 @@ This section documents the "why" behind key decisions — useful context if you'
 **Why:** Batching avoids holding a giant uncommitted transaction in memory. The `ON CONFLICT DO NOTHING` on messages makes the script idempotent — you can safely re-run it after a crash and it picks up where it left off (already-inserted messages are skipped). Bot messages are filtered out since they don't represent real user activity.
 
 **Consider:** The script runs sequentially through channels (no parallelism). This is intentional — parallel channel fetches would compound Discord's rate limits and make error handling harder. For a single server, sequential iteration is simple and reliable. discord.py's built-in rate limiter handles API throttling transparently.
+
+### Analytics Dashboard Architecture
+
+**What:** The dashboard uses a dedicated `queries.py` module that runs analytics queries against the database and returns plain dicts/lists. Some analytics (top words, emoji extraction) are computed in Python over recent rows rather than pure SQL.
+
+**Why:** Separating queries into their own module keeps `app.py` clean — it only handles routing and template rendering. For word counting and emoji extraction, Python's `Counter` and regex are simpler to write and maintain than equivalent PostgreSQL functions, especially when operating over a bounded set of recent messages (5,000 for words, 2,000 for emoji).
+
+**Consider:** This approach works well at small-to-medium scale. As the dataset grows, pulling thousands of rows into Python becomes slower. The natural next step would be materialized views or PostgreSQL full-text search aggregation for word counts, and a dedicated emoji table for emoji stats. The code includes comments flagging these future optimization points.
 
 ### Async Database Access
 

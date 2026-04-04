@@ -99,11 +99,11 @@
 
 {% block scripts %}
 <div id="chart-data"
-    data-top-users="{{ top_users | tojson }}"
-    data-top-channels="{{ top_channels | tojson }}"
-    data-activity="{{ activity | tojson }}"
-    data-top-words="{{ top_words | tojson }}"
-    data-msg-length="{{ msg_length | tojson }}"
+    data-top-users='{{ top_users | tojson }}'
+    data-top-channels='{{ top_channels | tojson }}'
+    data-activity='{{ activity | tojson }}'
+    data-top-words='{{ top_words | tojson }}'
+    data-msg-length='{{ msg_length | tojson }}'
     hidden></div>
 <script src="/static/dashboard.js"></script>
 {% endblock %}
