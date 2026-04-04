@@ -47,7 +47,12 @@ A Discord bot that tracks server activity and displays fun analytics (top words,
 - Dashboard analytics split into `dashboard/queries.py` — each query function returns plain dicts so the route handler stays thin
 - Time-filtered queries — every main query accepts an optional `after` datetime; `cutoff_from_range()` converts `7d`/`30d`/`90d` to a cutoff timestamp
 - Per-user stats via JSON API — `/api/user/{member_id}` returns user analytics as JSON, rendered client-side by `dashboard/static/user.js`
-- Profanity leaderboard — configurable word list loaded from `config/profanity.txt`, cached in `settings.load_profanity_words()`
+- Profanity leaderboard — configurable word list loaded from `config/profanity.txt`, cached in `settings.load_profanity_words()`; collapsible word reference on landing page; per-user top profanity words on user stats page
+- Activity heatmap — `get_activity_heatmap()` uses PostgreSQL `EXTRACT(dow/hour)` to group messages by day-of-week and hour; rendered as a CSS grid (not Chart.js) with color intensity
+- Awards & superlatives — `get_awards()` runs 7 targeted sub-queries (Night Owl, Early Bird, Emoji Monarch, Novelist, Chatterbox, Editor, Attachment Pro); server-rendered badge grid, no JS
+- Vocabulary diversity — `get_vocabulary_diversity()` computes type-token ratio per user over bounded message sets; horizontal bar chart via Chart.js
+- Conversation flow — `get_conversation_flow()` identifies consecutive-message reply pairs within a 5-minute gap in the same channel; server-rendered HTML table
+- Removed panels — Message Lengths and Most Active Channels were removed from both the landing page and user page to focus on more engaging analytics. The query functions (`get_message_length_stats`, `get_top_channels`, `get_user_message_length_distribution`, `get_user_top_channels`) still exist in `queries.py` but are no longer called from `app.py`
 
 ## Running Locally
 
@@ -118,6 +123,46 @@ The `get_profanity_leaderboard()` query scans recent messages and counts profani
 - **File-based word list** — profanity words are loaded from `config/profanity.txt` (one word per line, `#` comments supported). This makes the list editable by server admins without code changes.
 - **Cached loading** — `settings.load_profanity_words()` reads the file once and caches the result as a `frozenset` for O(1) membership checks. Subsequent calls return the cached set. There is no reload mechanism — the bot or dashboard must be restarted to pick up changes to `profanity.txt`.
 - **Python-side counting** — like top-words and emoji stats, profanity counting is done in Python over a bounded set of messages (10,000). The same scalability comments apply.
+
+### Activity Heatmap
+
+The `get_activity_heatmap()` query uses PostgreSQL's `EXTRACT(dow)` and `EXTRACT(hour)` to bucket messages by day-of-week and hour. Key choices:
+
+- **Pure CSS grid, not Chart.js** — a 7×24 heatmap maps naturally to an HTML grid with colored cells. Chart.js doesn't have a native heatmap type, so using DOM manipulation avoids pulling in a chart plugin. Color intensity is linearly interpolated from the accent color based on `count / maxCount`.
+- **UTC hours** — all timestamps are stored in UTC, so the heatmap shows UTC hours. The heading includes a "(UTC)" label. Converting to local time would require knowing the server's timezone, which isn't tracked.
+- **Day ordering** — PostgreSQL `EXTRACT(dow)` returns 0=Sunday, but the grid renders Monday first (order: 1,2,3,4,5,6,0) for a more conventional week layout.
+
+### Awards & Superlatives
+
+The `get_awards()` function runs 7 independent sub-queries, each finding the top member for a specific criterion. Key choices:
+
+- **Separate sub-queries** — each award has different aggregation logic (COUNT, SUM, AVG with HAVING), so a single combined query would be complex and hard to maintain. The trade-off is up to 14 DB round-trips per page load (each award runs an aggregation query plus a member lookup). A future optimization could run sub-queries in parallel using separate sessions and `asyncio.gather()`, since a single async session is not safe for concurrent awaits.
+- **Minimum thresholds** — the Novelist award requires at least 50 messages to prevent a user with one long message from winning. Other count-based awards naturally favor active users.
+- **Server-rendered HTML** — awards are rendered as a Jinja2 template grid (no Chart.js or client-side JS). This keeps the rendering path simple and consistent with the awards' static nature.
+
+### Vocabulary Diversity
+
+The `get_vocabulary_diversity()` query computes the type-token ratio (TTR = unique words / total words) for the most active users. Key choices:
+
+- **Batch message fetch** — rather than querying messages per user (N+1), the function fetches messages for all top users in a single query using `author_id IN (...)`, then groups by author in Python.
+- **Bounded sample** — up to 2,000 messages per user keeps computation tractable while providing a meaningful sample. The existing `_clean_content()` and `WORD_PATTERN` utilities are reused for word extraction.
+- **Minimum word threshold** — users with fewer than 10 words are excluded to avoid meaningless ratios from very low activity.
+
+### Conversation Flow
+
+The `get_conversation_flow()` query identifies reply pairs by finding consecutive messages from different authors in the same channel within a time gap. Key choices:
+
+- **Heuristic-based** — Discord's API doesn't expose reply threading for most historical messages, so consecutive-message pairing within a 5-minute gap is a reasonable approximation. The gap is configurable via the `gap_minutes` parameter.
+- **Chronological ordering** — messages are ordered by `channel_id, created_at ASC` so that iterating consecutive pairs correctly identifies who spoke first (the "prompt") and who responded (the "reply").
+- **Python-side pairing** — the pairing logic runs in Python over 10,000 recent messages. SQL window functions (LAG) could do this in the database, but the Python approach is simpler and matches the project's convention for text analytics.
+
+### Per-User Profanity Words
+
+The `get_user_top_profanity_words()` query returns the most-used profanity words for a specific user. Key choices:
+
+- **Reuses existing infrastructure** — the same `_clean_content()`, `WORD_PATTERN`, and `settings.load_profanity_words()` used by the server-wide profanity leaderboard. The only difference is filtering by `member_id`.
+- **Styled list rendering** — the user page renders profanity words as a styled list (matching the emoji list pattern) rather than a chart, since there are typically only 5 items.
+- **Collapsible word reference** — the landing page includes a `<details>/<summary>` element inside the Profanity Leaderboard card that reveals the full word list. This uses zero JavaScript and degrades gracefully.
 
 ## Coding Standards and Best Practices
 

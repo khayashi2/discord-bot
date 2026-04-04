@@ -15,10 +15,14 @@ A Discord bot that tracks server activity and displays fun analytics on a web da
 - **Live Message Tracking** — the bot listens to every message in your server and stores it in PostgreSQL (content, author, channel, emoji count, attachments, and more)
 - **Upsert Strategy** — channels and members are automatically upserted so metadata stays fresh without duplicates
 - **Historical Backfill** — a one-off script ingests all past messages from every text channel, with batched commits and per-channel error handling
-- **Web Dashboard** — a FastAPI-powered analytics dashboard with Chart.js visualizations: overview stats, most active users and channels, activity trend, top words, emoji usage, profanity leaderboard, and message length distribution
+- **Web Dashboard** — a FastAPI-powered analytics dashboard with Chart.js visualizations: overview stats, most active users, activity trend, top words, emoji usage, profanity leaderboard, activity heatmap, awards & superlatives, vocabulary diversity, and conversation flow
 - **Time-Filtered Analytics** — dashboard supports 7-day, 30-day, and 90-day time range filters so you can view activity over any recent window
-- **User Stats Page** — a dedicated per-user analytics page with a member dropdown; selecting a user fetches their stats via a JSON API and renders charts client-side (top words, activity over time, top channels, emoji usage, message length distribution)
-- **Profanity Leaderboard** — ranks users by profanity usage using a configurable word list (`config/profanity.txt`), with Python-side counting over recent messages
+- **User Stats Page** — a dedicated per-user analytics page with a member dropdown; selecting a user fetches their stats via a JSON API and renders charts client-side (top words, activity over time, emoji usage, and top profanity words)
+- **Profanity Leaderboard** — ranks users by profanity usage using a configurable word list (`config/profanity.txt`), with a collapsible reference showing all tracked words and per-user profanity breakdowns on the user stats page
+- **Activity Heatmap** — a day-of-week × hour-of-day grid showing when the server is most active, with color intensity based on message volume (hours in UTC)
+- **Awards & Superlatives** — fun badges highlighting server members: Night Owl, Early Bird, Emoji Monarch, Novelist, Chatterbox, Editor, and Attachment Pro
+- **Vocabulary Diversity** — ranks users by type-token ratio (unique words / total words), showing who has the most diverse vocabulary
+- **Conversation Flow** — analyzes consecutive messages to show who replies to whom most often, based on messages within a 5-minute window in the same channel
 
 ## Plan
 
@@ -40,7 +44,7 @@ Set up the discord.py bot that listens for new messages and inserts them in real
 
 ### Phase 5 — Dashboard (in progress)
 
-Build the API endpoints and frontend to visualize the trends. The dashboard is live with eight analytics panels (overview stats, top users, top channels, activity over time, top words, emoji usage, profanity leaderboard, message length distribution), time-range filtering (7d/30d/90d), and a dedicated per-user stats page.
+Build the API endpoints and frontend to visualize the trends. The dashboard is live with analytics panels (overview stats, top users, activity over time, top words, emoji usage, profanity leaderboard, activity heatmap, awards & superlatives, vocabulary diversity, conversation flow), time-range filtering (7d/30d/90d), and a dedicated per-user stats page with profanity word breakdown.
 
 ## Getting Started
 
@@ -199,6 +203,46 @@ This section documents the "why" behind key decisions — useful context if you'
 **Why:** It's a fun social feature that drives engagement. Making the word list a file (not hardcoded) means server admins can customize it without touching code. The list is loaded once and cached in memory via `settings.load_profanity_words()`.
 
 **Consider:** Like top-words, profanity counting is done in Python over a bounded set of recent messages (10,000). The same trade-off applies — simple now, materialized view later if needed. In a real deployment you'd keep the word list out of version control (e.g., mount it as a Docker secret); it's committed here for portfolio completeness.
+
+### Removing Message Lengths and Most Active Channels
+
+**What:** The Message Lengths (doughnut chart) and Most Active Channels (bar chart) panels were removed from both the landing page and user stats page.
+
+**Why:** These panels provided less engagement value compared to the newer analytics (heatmap, awards, vocabulary diversity, conversation flow). Message length distribution is a relatively static metric that doesn't change much over time, and channel activity overlaps with information already visible in the overview stats. Removing them keeps the dashboard focused on the most interesting insights.
+
+**Consider:** The query functions (`get_message_length_stats`, `get_top_channels`, etc.) were intentionally left in `queries.py` as unused code — they could be re-enabled or repurposed (e.g., for a CSV export feature) without reimplementing the SQL logic.
+
+### Activity Heatmap
+
+**What:** A CSS grid visualization showing message volume by day-of-week and hour-of-day, with color intensity proportional to activity.
+
+**Why:** Heatmaps are one of the best ways to spot temporal patterns at a glance — you can immediately see if your server is more active on weekends, or if there's a cluster of late-night chatters. The grid is rendered with pure DOM manipulation (no Chart.js) since a 7×24 cell grid maps more naturally to HTML/CSS than to a chart library.
+
+**Consider:** All timestamps are stored and displayed in UTC. This means a US-based server will see peak activity shifted by several hours. The dashboard labels hours as "(UTC)" to set expectations. A future improvement could let users choose a display timezone, but that adds complexity (timezone dropdown, client-side conversion) that isn't worth it for an MVP.
+
+### Awards & Superlatives
+
+**What:** Seven fun award categories (Night Owl, Early Bird, Emoji Monarch, Novelist, Chatterbox, Editor, Attachment Pro) that highlight the top member in each category.
+
+**Why:** Awards make the dashboard more engaging and social. They're the kind of feature that gets people talking ("I didn't know I sent the most emoji!"). Each award runs a targeted sub-query (e.g., counting messages between midnight and 4 AM for Night Owl) and picks the top member.
+
+**Consider:** The Novelist award requires a minimum of 50 messages to avoid a user with one long message winning. This threshold is hardcoded — in a larger project you might make it configurable. The awards section runs 7 separate queries; for a small server this is fine, but at scale you'd want to combine them into fewer queries or cache the results.
+
+### Vocabulary Diversity
+
+**What:** A type-token ratio (TTR) chart ranking users by how diverse their vocabulary is — `unique_words / total_words`.
+
+**Why:** TTR is a simple but effective measure of linguistic diversity. It adds a different dimension to the analytics beyond just "who talks the most" — someone might send fewer messages but use a much richer vocabulary.
+
+**Consider:** TTR is sensitive to sample size — users with fewer messages tend to have higher ratios. The query fetches up to 2,000 recent messages per user to keep the comparison somewhat normalized, but it's not a perfect metric. The chart uses a horizontal bar layout consistent with other user-ranking charts in the dashboard.
+
+### Conversation Flow
+
+**What:** A table showing the top reply pairs — who tends to respond to whom — based on consecutive messages in the same channel within a 5-minute window.
+
+**Why:** It reveals the social dynamics of a server: who are the conversation pairs, who tends to respond to specific people. The 5-minute gap threshold filters out messages that happen to be in the same channel but aren't actually part of a conversation.
+
+**Consider:** This is a heuristic, not true threading. Discord doesn't expose reply relationships in older messages (only explicit replies via the reply feature). Consecutive-message pairing is a reasonable approximation but can misattribute replies in busy channels. The query processes 10,000 recent messages in Python, ordered chronologically by channel.
 
 ### Async Database Access
 
