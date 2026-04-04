@@ -123,9 +123,9 @@ ruff check .
 ├── docker-compose.yml    # Service orchestration
 ├── Dockerfile            # Container image
 ├── .claude/              # Claude Code configuration
-│   ├── agents/           # Specialized sub-agents
+│   ├── agents/           # Specialized sub-agents (code-reviewer, dashboard-builder, etc.)
 │   ├── hooks/            # Tool-use hooks
-│   ├── skills/           # Reusable skill definitions
+│   ├── skills/           # Quality & workflow skills (perf-review, security-check, refactor, pr-review, lint, etc.)
 │   └── settings.json     # Project-level settings
 └── .github/workflows/    # CI/CD pipeline
 ```
