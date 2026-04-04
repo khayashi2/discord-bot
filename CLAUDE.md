@@ -52,6 +52,7 @@ A Discord bot that tracks server activity and displays fun analytics (top words,
 - Awards & superlatives — `get_awards()` runs 7 targeted sub-queries (Night Owl, Early Bird, Emoji Monarch, Novelist, Chatterbox, Editor, Attachment Pro); server-rendered badge grid, no JS
 - Vocabulary diversity — `get_vocabulary_diversity()` computes type-token ratio per user over bounded message sets; horizontal bar chart via Chart.js
 - Conversation flow — `get_conversation_flow()` identifies consecutive-message reply pairs within a 5-minute gap in the same channel; server-rendered HTML table
+- Removed panels — Message Lengths and Most Active Channels were removed from both the landing page and user page to focus on more engaging analytics. The query functions (`get_message_length_stats`, `get_top_channels`, `get_user_message_length_distribution`, `get_user_top_channels`) still exist in `queries.py` but are no longer called from `app.py`
 
 ## Running Locally
 
@@ -135,7 +136,7 @@ The `get_activity_heatmap()` query uses PostgreSQL's `EXTRACT(dow)` and `EXTRACT
 
 The `get_awards()` function runs 7 independent sub-queries, each finding the top member for a specific criterion. Key choices:
 
-- **Separate sub-queries** — each award has different aggregation logic (COUNT, SUM, AVG with HAVING), so a single combined query would be complex and hard to maintain. The trade-off is 7 DB round-trips per page load; a future optimization could use `asyncio.gather()` for concurrency within the same session.
+- **Separate sub-queries** — each award has different aggregation logic (COUNT, SUM, AVG with HAVING), so a single combined query would be complex and hard to maintain. The trade-off is up to 14 DB round-trips per page load (each award runs an aggregation query plus a member lookup). A future optimization could run sub-queries in parallel using separate sessions and `asyncio.gather()`, since a single async session is not safe for concurrent awaits.
 - **Minimum thresholds** — the Novelist award requires at least 50 messages to prevent a user with one long message from winning. Other count-based awards naturally favor active users.
 - **Server-rendered HTML** — awards are rendered as a Jinja2 template grid (no Chart.js or client-side JS). This keeps the rendering path simple and consistent with the awards' static nature.
 

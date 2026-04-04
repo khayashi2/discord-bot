@@ -204,6 +204,14 @@ This section documents the "why" behind key decisions — useful context if you'
 
 **Consider:** Like top-words, profanity counting is done in Python over a bounded set of recent messages (10,000). The same trade-off applies — simple now, materialized view later if needed. In a real deployment you'd keep the word list out of version control (e.g., mount it as a Docker secret); it's committed here for portfolio completeness.
 
+### Removing Message Lengths and Most Active Channels
+
+**What:** The Message Lengths (doughnut chart) and Most Active Channels (bar chart) panels were removed from both the landing page and user stats page.
+
+**Why:** These panels provided less engagement value compared to the newer analytics (heatmap, awards, vocabulary diversity, conversation flow). Message length distribution is a relatively static metric that doesn't change much over time, and channel activity overlaps with information already visible in the overview stats. Removing them keeps the dashboard focused on the most interesting insights.
+
+**Consider:** The query functions (`get_message_length_stats`, `get_top_channels`, etc.) were intentionally left in `queries.py` as unused code — they could be re-enabled or repurposed (e.g., for a CSV export feature) without reimplementing the SQL logic.
+
 ### Activity Heatmap
 
 **What:** A CSS grid visualization showing message volume by day-of-week and hour-of-day, with color intensity proportional to activity.
