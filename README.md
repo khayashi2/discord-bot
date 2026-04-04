@@ -6,7 +6,7 @@ A Discord bot that tracks server activity and displays fun analytics on a web da
 
 - **Bot**: Python 3.12, discord.py v2
 - **Database**: PostgreSQL 16 (via Docker)
-- **Dashboard**: FastAPI + Jinja2 + Chart.js
+- **Dashboard**: FastAPI + Jinja2 + Chart.js + wordcloud2.js + Tom Select
 - **Migrations**: Alembic + SQLAlchemy 2.0
 - **CI/CD**: GitHub Actions (lint, test, Docker build)
 
@@ -15,16 +15,22 @@ A Discord bot that tracks server activity and displays fun analytics on a web da
 - **Live Message Tracking** — the bot listens to every message in your server and stores it in PostgreSQL (content, author, channel, emoji count, attachments, and more)
 - **Upsert Strategy** — channels and members are automatically upserted so metadata stays fresh without duplicates
 - **Historical Backfill** — a one-off script ingests all past messages from every text channel, with batched commits and per-channel error handling
-- **Web Dashboard** — a FastAPI-powered analytics dashboard with Chart.js visualizations: overview stats, most active users, activity trend, top words, emoji usage, profanity leaderboard, activity heatmap, awards & superlatives, vocabulary diversity, conversation flow, peak hours, and reaction time kings
+- **Web Dashboard** — a FastAPI-powered analytics dashboard with Chart.js visualizations: overview stats, most active users, activity trend, top words, word cloud, emoji usage, profanity leaderboard, activity heatmap, awards & superlatives, vocabulary diversity, conversation flow (with visual/table toggle), peak hours, reaction time kings, channel activity list, server growth timeline, message sentiment trend, and a daily/weekly digest card
+- **Customizable Dashboard Block** — a dropdown (Tom Select) on both the landing page and user stats page where end-users can choose which visualization to display in a dedicated card; selection persists via localStorage
 - **Time-Filtered Analytics** — dashboard supports 7-day, 30-day, and 90-day time range filters so you can view activity over any recent window
-- **User Stats Page** — a dedicated per-user analytics page with a member dropdown, time-range filtering (7d/30d/90d), and a sticky header showing the selected user as you scroll; includes top words, activity over time, emoji usage, top profanity words, peak hours, and vocabulary diversity
+- **User Stats Page** — a dedicated per-user analytics page with a member dropdown, time-range filtering (7d/30d/90d), a sticky header showing the selected user as you scroll, and a custom view block; includes top words, activity over time, emoji usage, top profanity words, peak hours, and vocabulary diversity
 - **Profanity Leaderboard** — ranks users by profanity usage using a configurable word list (`config/profanity.txt`), with a collapsible reference showing all tracked words and per-user profanity breakdowns on the user stats page
 - **Activity Heatmap** — a day-of-week × hour-of-day grid showing when the server is most active, with color intensity based on message volume (hours in Pacific Time, auto-adjusts for PST/PDT)
 - **Awards & Superlatives** — fun badges highlighting server members: Night Owl, Early Bird, Emoji Monarch, Novelist, Chatterbox, Editor, and Attachment Pro
 - **Vocabulary Diversity** — ranks users by type-token ratio (unique words / total words), showing who has the most diverse vocabulary
-- **Conversation Flow** — analyzes consecutive messages to show who replies to whom most often, based on messages within a 5-minute window in the same channel
+- **Conversation Flow** — analyzes consecutive messages to show who replies to whom most often, with a toggle between a visual adjacency heatmap and a text table
 - **Peak Hours** — a bar chart showing message volume by hour of day (0–23 Pacific Time), revealing when the server is most active throughout the day
 - **Reaction Time Kings** — ranks the fastest responders by average reply time, using the same consecutive-message pairing logic as conversation flow (minimum 3 responses to qualify)
+- **Channel Activity List** — a server-rendered table showing all indexed channels with message count and last active date
+- **Daily/Weekly Digest** — "today vs yesterday" and "this week vs last week" cards with percentage deltas for messages and active users
+- **Server Growth Timeline** — a line chart showing unique active users per day over time (Pacific Time)
+- **Word Cloud** — a visual word cloud (via wordcloud2.js) showing the most frequently used words, with size proportional to frequency
+- **Message Sentiment Trend** — a dual-line chart tracking daily positive and negative keyword hits, with a disclaimer that it's keyword-based, not AI-powered
 
 ## Plan
 
@@ -46,7 +52,7 @@ Set up the discord.py bot that listens for new messages and inserts them in real
 
 ### Phase 5 — Dashboard (in progress)
 
-Build the API endpoints and frontend to visualize the trends. The dashboard is live with analytics panels (overview stats, top users, activity over time, top words, emoji usage, profanity leaderboard, activity heatmap, awards & superlatives, vocabulary diversity, conversation flow, peak hours, reaction time kings), time-range filtering (7d/30d/90d), and a dedicated per-user stats page with time filtering, peak hours, vocabulary diversity, and profanity word breakdown.
+Build the API endpoints and frontend to visualize the trends. The dashboard is live with analytics panels (overview stats, digest, channel activity, top users, activity over time, server growth, top words, word cloud, emoji usage, profanity leaderboard, sentiment trend, activity heatmap, awards & superlatives, vocabulary diversity, conversation flow with visual/table toggle, peak hours, reaction time kings), time-range filtering (7d/30d/90d), a customizable view block with dropdown, and a dedicated per-user stats page with time filtering, peak hours, vocabulary diversity, profanity word breakdown, and its own custom view block.
 
 ## Getting Started
 
@@ -293,6 +299,62 @@ This section documents the "why" behind key decisions — useful context if you'
 **Why:** The main dashboard shows server-wide peak hours and vocabulary diversity, but users want to see their own patterns. "When am I most active?" and "How diverse is my vocabulary?" are natural follow-ups to the per-user stats already shown. Both panels include explanatory text so users understand what TTR means.
 
 **Consider:** The vocabulary diversity panel uses stat cards (not a chart) since it's a single user's data — a bar chart would only have one bar. The TTR description ("unique words / total words, higher = more diverse") appears on both the main dashboard and user page for consistency. The server returns `total_words: 0` when the sample is too small (< 10 words), and the client hides the panel in that case.
+
+### Channel Activity List
+
+**What:** A server-rendered table showing every indexed channel with its message count and last active date.
+
+**Why:** Users want to know which channels the bot is tracking and how active each one is. This was a requested feature — it provides transparency about what data exists and helps server admins spot dead channels.
+
+**Consider:** The query uses a `LEFT JOIN` so channels with zero messages still appear. When time filtering is active, channels with no messages in the selected range are still shown (via an `OR created_at IS NULL` clause on the outer join) so the list doesn't unexpectedly shrink.
+
+### Daily/Weekly Digest Card
+
+**What:** Four cards showing "today vs yesterday" and "this week vs last week" comparisons for messages and active users, with colored percentage deltas.
+
+**Why:** Dashboard visitors want to quickly answer "is the server more or less active than usual?" without mentally comparing bar charts. The digest provides instant context with green (up) and red (down) indicators.
+
+**Consider:** The digest always uses real-time comparisons (today vs yesterday, this week vs last week) — it ignores the time range filter since "today vs yesterday" is inherently a fixed window. The percentage calculation handles division by zero gracefully: if yesterday had zero messages, a non-zero today shows +100%.
+
+### Server Growth Timeline
+
+**What:** A line chart showing unique active users per day, using Pacific Time for day boundaries.
+
+**Why:** Message volume alone doesn't tell you if the server is growing. Unique daily users reveals whether the community is expanding, stable, or declining. This complements the activity-over-time chart (which shows message count).
+
+**Consider:** Uses `func.timezone("US/Pacific", ...)` for day truncation, consistent with the heatmap and peak hours. Without this, a message sent at 10 PM Pacific would be bucketed into the next UTC day, producing misleading results for a US-based server.
+
+### Word Cloud
+
+**What:** A visual word cloud rendered with wordcloud2.js, showing the top 80 words with size proportional to frequency.
+
+**Why:** Word clouds are more engaging than bar charts for showing word frequency — they're immediately scannable and make great screenshots. The larger dataset (80 words vs. 20 for the bar chart) takes advantage of the visual format.
+
+**Consider:** wordcloud2.js requires explicit canvas dimensions. The render is deferred with `requestAnimationFrame` so the browser finishes layout before measuring the container width — this prevents a zero-width crash when the word cloud is rendered dynamically inside the custom view block.
+
+### Message Sentiment Trend
+
+**What:** A dual-line chart showing daily positive and negative keyword hits over time, based on simple word lists (~20 words each).
+
+**Why:** It adds an emotional dimension to the analytics — you can spot if the server mood shifted after an event. The keyword approach is simple and transparent (no black-box ML model).
+
+**Consider:** Keyword matching is crude — "not bad" registers as negative ("bad"), and sarcasm is undetectable. The dashboard includes a disclaimer: "Based on simple keyword matching — approximate, not AI-powered." The 5,000-message scan limit means the all-time view only covers recent history, with older days showing zero counts.
+
+### "Who Talks to Whom" Network
+
+**What:** An adjacency heatmap grid showing reply counts between user pairs, with a toggle button to switch between the visual heatmap and the existing text table.
+
+**Why:** The conversation flow table shows raw numbers but doesn't reveal the overall pattern at a glance. The heatmap makes it immediately visible who the dominant conversation pairs are, using the same color intensity pattern as the activity heatmap.
+
+**Consider:** The toggle uses two simple buttons that show/hide the respective views — no JavaScript framework needed. The heatmap truncates long usernames with an ellipsis and adds tooltip text for the full name. Both views use the same underlying data from `get_conversation_flow()`.
+
+### Customizable Dashboard Block
+
+**What:** A dropdown (Tom Select) on both the landing page and user stats page where end-users can select which visualization to display in a dedicated card. The selection persists via `localStorage`.
+
+**Why:** Different users care about different metrics. Rather than making everyone scroll through every panel, the custom block lets each visitor pin their favorite visualization at the top of the page. It appears on both pages with separate localStorage keys and visualization registries.
+
+**Consider:** The implementation uses a `VIZ_REGISTRY` pattern — a plain object mapping keys to `{label, dataKey, render, type}`. Adding a new visualization to the dropdown only requires one new registry entry. Chart.js instances are tracked and properly destroyed before re-rendering to prevent memory leaks. The `div`-type renders (heatmap, network) need different container setup than `canvas`-type renders.
 
 ### Async Database Access
 

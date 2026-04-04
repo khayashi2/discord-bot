@@ -143,6 +143,26 @@ MOCK_QUERY_RESULTS = {
     "get_reaction_time_kings": [
         {"display_name": "Alice", "avg_seconds": 32.5, "response_count": 15},
     ],
+    "get_channel_activity": [
+        {"name": "general", "count": 1000, "last_message": "2026-04-03 14:30"},
+    ],
+    "get_digest": {
+        "today_msgs": 42,
+        "yesterday_msgs": 38,
+        "msg_delta_pct": 10.5,
+        "today_users": 5,
+        "yesterday_users": 4,
+        "user_delta_pct": 25.0,
+        "week_msgs": 300,
+        "last_week_msgs": 280,
+        "week_msg_delta_pct": 7.1,
+        "week_users": 12,
+        "last_week_users": 10,
+        "week_user_delta_pct": 20.0,
+    },
+    "get_unique_users_over_time": [{"day": "2026-04-01", "unique_users": 8}],
+    "get_word_cloud_data": [{"word": "discord", "count": 50}],
+    "get_sentiment_trend": [{"day": "2026-04-01", "positive": 10, "negative": 3}],
 }
 
 
@@ -229,6 +249,24 @@ async def test_index_handles_empty_data():
         "get_conversation_flow": [],
         "get_peak_hours": [],
         "get_reaction_time_kings": [],
+        "get_channel_activity": [],
+        "get_digest": {
+            "today_msgs": 0,
+            "yesterday_msgs": 0,
+            "msg_delta_pct": 0,
+            "today_users": 0,
+            "yesterday_users": 0,
+            "user_delta_pct": 0,
+            "week_msgs": 0,
+            "last_week_msgs": 0,
+            "week_msg_delta_pct": 0,
+            "week_users": 0,
+            "last_week_users": 0,
+            "week_user_delta_pct": 0,
+        },
+        "get_unique_users_over_time": [],
+        "get_word_cloud_data": [],
+        "get_sentiment_trend": [],
     }
 
     with ExitStack() as stack:

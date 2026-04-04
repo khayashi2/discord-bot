@@ -79,6 +79,75 @@
         font-size: 0.8rem;
         text-transform: uppercase;
     }
+    /* Digest card */
+    .digest-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 1rem;
+    }
+    .digest-item {
+        background: var(--bg-card);
+        border-radius: 8px;
+        padding: 1rem;
+    }
+    .digest-label {
+        font-size: 0.8rem;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        margin-bottom: 0.5rem;
+    }
+    .digest-value {
+        font-size: 1.5rem;
+        font-weight: 700;
+    }
+    .digest-delta {
+        font-size: 0.85rem;
+        margin-top: 0.25rem;
+    }
+    .delta-positive { color: #90be6d; }
+    .delta-negative { color: var(--accent); }
+    .delta-neutral { color: var(--text-secondary); }
+    /* Channel activity table */
+    .channel-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9rem;
+    }
+    .channel-table th, .channel-table td {
+        padding: 0.5rem 0.75rem;
+        text-align: left;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .channel-table th {
+        color: var(--text-secondary);
+        font-weight: 600;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+    }
+    /* Network grid (adjacency heatmap) */
+    .network-grid {
+        overflow-x: auto;
+    }
+    /* View toggle button */
+    .view-toggle {
+        padding: 0.3rem 0.75rem;
+        border-radius: 6px;
+        background: var(--bg-card);
+        color: var(--text-secondary);
+        font-size: 0.8rem;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        cursor: pointer;
+        transition: background 0.2s, color 0.2s;
+    }
+    .view-toggle:hover {
+        color: var(--text-primary);
+        border-color: var(--accent);
+    }
+    .view-toggle.active {
+        background: var(--accent);
+        color: #fff;
+        border-color: var(--accent);
+    }
 </style>
 {% endblock %}
 
@@ -89,6 +158,45 @@
     <a href="/?range=30d" {% if active_range == '30d' %}class="active"{% endif %}>30 Days</a>
     <a href="/?range=90d" {% if active_range == '90d' %}class="active"{% endif %}>90 Days</a>
     <a href="/" {% if not active_range %}class="active"{% endif %}>All Time</a>
+</div>
+
+<!-- Digest: Today vs Yesterday / This Week vs Last Week -->
+<div class="card">
+    <h2>Activity Digest</h2>
+    <div class="digest-grid">
+        <div class="digest-item">
+            <div class="digest-label">Messages Today</div>
+            <div class="digest-value">{{ digest.today_msgs }}</div>
+            <div class="digest-delta {% if digest.msg_delta_pct > 0 %}delta-positive{% elif digest.msg_delta_pct < 0 %}delta-negative{% else %}delta-neutral{% endif %}">
+                {% if digest.msg_delta_pct > 0 %}&#9650;{% elif digest.msg_delta_pct < 0 %}&#9660;{% else %}&#8212;{% endif %}
+                {{ digest.msg_delta_pct | abs }}% vs yesterday ({{ digest.yesterday_msgs }})
+            </div>
+        </div>
+        <div class="digest-item">
+            <div class="digest-label">Active Users Today</div>
+            <div class="digest-value">{{ digest.today_users }}</div>
+            <div class="digest-delta {% if digest.user_delta_pct > 0 %}delta-positive{% elif digest.user_delta_pct < 0 %}delta-negative{% else %}delta-neutral{% endif %}">
+                {% if digest.user_delta_pct > 0 %}&#9650;{% elif digest.user_delta_pct < 0 %}&#9660;{% else %}&#8212;{% endif %}
+                {{ digest.user_delta_pct | abs }}% vs yesterday ({{ digest.yesterday_users }})
+            </div>
+        </div>
+        <div class="digest-item">
+            <div class="digest-label">Messages This Week</div>
+            <div class="digest-value">{{ digest.week_msgs }}</div>
+            <div class="digest-delta {% if digest.week_msg_delta_pct > 0 %}delta-positive{% elif digest.week_msg_delta_pct < 0 %}delta-negative{% else %}delta-neutral{% endif %}">
+                {% if digest.week_msg_delta_pct > 0 %}&#9650;{% elif digest.week_msg_delta_pct < 0 %}&#9660;{% else %}&#8212;{% endif %}
+                {{ digest.week_msg_delta_pct | abs }}% vs last week ({{ digest.last_week_msgs }})
+            </div>
+        </div>
+        <div class="digest-item">
+            <div class="digest-label">Active Users This Week</div>
+            <div class="digest-value">{{ digest.week_users }}</div>
+            <div class="digest-delta {% if digest.week_user_delta_pct > 0 %}delta-positive{% elif digest.week_user_delta_pct < 0 %}delta-negative{% else %}delta-neutral{% endif %}">
+                {% if digest.week_user_delta_pct > 0 %}&#9650;{% elif digest.week_user_delta_pct < 0 %}&#9660;{% else %}&#8212;{% endif %}
+                {{ digest.week_user_delta_pct | abs }}% vs last week ({{ digest.last_week_users }})
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- Overview stat cards -->
@@ -111,6 +219,40 @@
     </div>
 </div>
 
+<!-- Custom view block -->
+<div class="card" id="custom-block">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h2 style="margin-bottom: 0;">Custom View</h2>
+        <select id="custom-viz-select" style="width: 240px;">
+            <option value="">Choose a visualization...</option>
+        </select>
+    </div>
+    <div id="custom-viz-container">
+        <p class="empty-state">Select a visualization above.</p>
+    </div>
+</div>
+
+<!-- Channel activity -->
+<div class="card">
+    <h2>Channel Activity</h2>
+    {% if channel_activity %}
+        <table class="channel-table">
+            <thead><tr><th>Channel</th><th>Messages</th><th>Last Active</th></tr></thead>
+            <tbody>
+                {% for ch in channel_activity %}
+                    <tr>
+                        <td>#{{ ch.name }}</td>
+                        <td>{{ ch.count }}</td>
+                        <td>{{ ch.last_message or 'N/A' }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p class="empty-state">No channel data yet.</p>
+    {% endif %}
+</div>
+
 <!-- Activity over time -->
 <div class="card">
     <h2>Activity{% if active_range %} (Last {{ active_range }}){% else %} (Last 30 Days){% endif %}</h2>
@@ -118,6 +260,16 @@
         <canvas id="activityChart"></canvas>
     {% else %}
         <p class="empty-state">No activity data yet.</p>
+    {% endif %}
+</div>
+
+<!-- Server growth timeline -->
+<div class="card">
+    <h2>Server Growth (Unique Active Users){% if active_range %} — Last {{ active_range }}{% endif %}</h2>
+    {% if growth %}
+        <canvas id="growthChart"></canvas>
+    {% else %}
+        <p class="empty-state">No growth data yet.</p>
     {% endif %}
 </div>
 
@@ -139,6 +291,16 @@
             <p class="empty-state">No word data yet.</p>
         {% endif %}
     </div>
+</div>
+
+<!-- Word cloud -->
+<div class="card">
+    <h2>Word Cloud</h2>
+    {% if word_cloud %}
+        <canvas id="wordCloudCanvas" width="800" height="350"></canvas>
+    {% else %}
+        <p class="empty-state">No word data yet.</p>
+    {% endif %}
 </div>
 
 <!-- Profanity leaderboard & emoji stats -->
@@ -185,6 +347,19 @@
     </div>
 </div>
 
+<!-- Sentiment trend -->
+<div class="card">
+    <h2>Message Sentiment Trend</h2>
+    <p style="color: var(--text-secondary); font-size: 0.8rem; margin-bottom: 0.75rem;">
+        Based on simple keyword matching &mdash; approximate, not AI-powered.
+    </p>
+    {% if sentiment %}
+        <canvas id="sentimentChart"></canvas>
+    {% else %}
+        <p class="empty-state">No sentiment data yet.</p>
+    {% endif %}
+</div>
+
 <!-- Activity heatmap -->
 <div class="card">
     <h2>Activity Heatmap <span style="font-size: 0.75rem; color: var(--text-secondary); font-weight: normal;">(Pacific)</span></h2>
@@ -195,7 +370,7 @@
     {% endif %}
 </div>
 
-<!-- Vocabulary diversity -->
+<!-- Vocabulary diversity & conversation flow -->
 <div class="grid">
     <div class="card">
         <h2>Vocabulary Diversity</h2>
@@ -209,20 +384,31 @@
         {% endif %}
     </div>
     <div class="card">
-        <h2>Conversation Flow</h2>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h2 style="margin-bottom: 0;">Who Talks to Whom</h2>
+            {% if conversation_flow %}
+            <div>
+                <button class="view-toggle active" id="network-btn" onclick="toggleConvView('network')">Visual</button>
+                <button class="view-toggle" id="table-btn" onclick="toggleConvView('table')">Table</button>
+            </div>
+            {% endif %}
+        </div>
         {% if conversation_flow %}
-            <table class="flow-table">
-                <thead><tr><th>From</th><th>To</th><th>Replies</th></tr></thead>
-                <tbody>
-                    {% for flow in conversation_flow %}
-                        <tr>
-                            <td>{{ flow.from_user }}</td>
-                            <td>{{ flow.to_user }}</td>
-                            <td>{{ flow.count }}</td>
-                        </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+            <div id="networkGrid" class="network-grid"></div>
+            <div id="convFlowTable" style="display: none;">
+                <table class="flow-table">
+                    <thead><tr><th>From</th><th>To</th><th>Replies</th></tr></thead>
+                    <tbody>
+                        {% for flow in conversation_flow %}
+                            <tr>
+                                <td>{{ flow.from_user }}</td>
+                                <td>{{ flow.to_user }}</td>
+                                <td>{{ flow.count }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         {% else %}
             <p class="empty-state">No conversation data yet.</p>
         {% endif %}
@@ -279,6 +465,10 @@
     data-vocabulary='{{ vocabulary | tojson }}'
     data-peak-hours='{{ peak_hours | tojson }}'
     data-reaction-time='{{ reaction_time | tojson }}'
+    data-growth='{{ growth | tojson }}'
+    data-word-cloud='{{ word_cloud | tojson }}'
+    data-sentiment='{{ sentiment | tojson }}'
+    data-conversation-flow='{{ conversation_flow | tojson }}'
     hidden></div>
 <script src="/static/dashboard.js"></script>
 {% endblock %}

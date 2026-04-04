@@ -14,6 +14,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import settings
 from db.models import Channel, Member, Message
 
+# Simple keyword sets for sentiment analysis
+POSITIVE_WORDS = frozenset(
+    "good great awesome nice love happy thanks cool amazing wonderful "
+    "excellent fantastic beautiful perfect brilliant fun glad excited "
+    "appreciate helpful kind yes please welcome congrats".split()
+)
+NEGATIVE_WORDS = frozenset(
+    "bad hate awful terrible sad angry annoyed stupid boring ugly "
+    "worst sucks horrible wrong fail broken useless disappointed "
+    "frustrated sorry unfortunately never".split()
+)
+
 # Common English stopwords to filter from top-words results
 STOPWORDS = frozenset(
     "the be to of and a in that have i it for not on with he as you do at "
@@ -1046,4 +1058,182 @@ async def get_conversation_flow(
             "count": count,
         }
         for (a, b), count in top_pairs
+    ]
+
+
+async def get_channel_activity(
+    session: AsyncSession, after: datetime | None = None
+) -> list[dict]:
+    """Return all indexed channels with message count and last message date."""
+    stmt = select(
+        Channel.name,
+        func.count(Message.id).label("count"),
+        func.max(Message.created_at).label("last_message"),
+    ).outerjoin(Message, Message.channel_id == Channel.id)
+    if after:
+        stmt = stmt.where(
+            (Message.created_at >= after) | (Message.created_at.is_(None))
+        )
+    stmt = stmt.group_by(Channel.id).order_by(func.count(Message.id).desc())
+    rows = (await session.execute(stmt)).all()
+    return [
+        {
+            "name": r.name,
+            "count": r.count,
+            "last_message": r.last_message.strftime("%Y-%m-%d %H:%M")
+            if r.last_message
+            else None,
+        }
+        for r in rows
+    ]
+
+
+async def get_digest(session: AsyncSession) -> dict:
+    """Return today-vs-yesterday and this-week-vs-last-week deltas.
+
+    Always relative to the current UTC time — no ``after`` parameter.
+    """
+    now = datetime.now(UTC)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    yesterday_start = today_start - timedelta(days=1)
+
+    # Monday of the current week
+    week_start = today_start - timedelta(days=today_start.weekday())
+    last_week_start = week_start - timedelta(weeks=1)
+
+    async def _count(start: datetime, end: datetime) -> tuple[int, int]:
+        """Return (message_count, unique_user_count) for a time range."""
+        msg_q = (
+            select(func.count())
+            .select_from(Message)
+            .where(Message.created_at >= start, Message.created_at < end)
+        )
+        user_q = (
+            select(func.count(func.distinct(Message.author_id)))
+            .select_from(Message)
+            .where(Message.created_at >= start, Message.created_at < end)
+        )
+        msgs = await session.scalar(msg_q) or 0
+        users = await session.scalar(user_q) or 0
+        return msgs, users
+
+    today_msgs, today_users = await _count(today_start, now)
+    yesterday_msgs, yesterday_users = await _count(yesterday_start, today_start)
+    week_msgs, week_users = await _count(week_start, now)
+    last_week_msgs, last_week_users = await _count(last_week_start, week_start)
+
+    def _pct(new: int, old: int) -> float:
+        if old == 0:
+            return 100.0 if new > 0 else 0.0
+        return round((new - old) / old * 100, 1)
+
+    return {
+        "today_msgs": today_msgs,
+        "yesterday_msgs": yesterday_msgs,
+        "msg_delta_pct": _pct(today_msgs, yesterday_msgs),
+        "today_users": today_users,
+        "yesterday_users": yesterday_users,
+        "user_delta_pct": _pct(today_users, yesterday_users),
+        "week_msgs": week_msgs,
+        "last_week_msgs": last_week_msgs,
+        "week_msg_delta_pct": _pct(week_msgs, last_week_msgs),
+        "week_users": week_users,
+        "last_week_users": last_week_users,
+        "week_user_delta_pct": _pct(week_users, last_week_users),
+    }
+
+
+async def get_unique_users_over_time(
+    session: AsyncSession, days: int = 30, after: datetime | None = None
+) -> list[dict]:
+    """Return daily count of unique active users over time."""
+    now = datetime.now(UTC)
+    cutoff = after if after else now - timedelta(days=days)
+    range_days = (now - cutoff).days
+    day_col = func.date_trunc("day", Message.created_at).label("day")
+    stmt = (
+        select(
+            day_col, func.count(func.distinct(Message.author_id)).label("unique_users")
+        )
+        .where(Message.created_at >= cutoff)
+        .group_by(day_col)
+        .order_by(day_col)
+    )
+    rows = (await session.execute(stmt)).all()
+
+    counts_by_day = {r.day.strftime("%Y-%m-%d"): r.unique_users for r in rows}
+    return [
+        {
+            "day": (cutoff + timedelta(days=i)).strftime("%Y-%m-%d"),
+            "unique_users": counts_by_day.get(
+                (cutoff + timedelta(days=i)).strftime("%Y-%m-%d"), 0
+            ),
+        }
+        for i in range(range_days + 1)
+    ]
+
+
+async def get_word_cloud_data(
+    session: AsyncSession, limit: int = 80, after: datetime | None = None
+) -> list[dict]:
+    """Return top words with counts for word cloud rendering (larger set)."""
+    stmt = select(Message.content).where(Message.content.isnot(None))
+    if after:
+        stmt = stmt.where(Message.created_at >= after)
+    stmt = stmt.order_by(Message.created_at.desc()).limit(5000)
+    rows = (await session.execute(stmt)).scalars().all()
+
+    counter: Counter[str] = Counter()
+    for content in rows:
+        cleaned = _clean_content(content.lower())
+        words = WORD_PATTERN.findall(cleaned)
+        counter.update(w for w in words if not _is_filtered_word(w))
+
+    return [
+        {"word": word, "count": count} for word, count in counter.most_common(limit)
+    ]
+
+
+async def get_sentiment_trend(
+    session: AsyncSession, days: int = 30, after: datetime | None = None
+) -> list[dict]:
+    """Return daily sentiment counts based on simple keyword matching.
+
+    Each day gets a ``positive`` and ``negative`` count representing the total
+    number of positive/negative keyword hits found in that day's messages.
+    """
+    now = datetime.now(UTC)
+    cutoff = after if after else now - timedelta(days=days)
+    range_days = (now - cutoff).days
+
+    stmt = (
+        select(Message.created_at, Message.content)
+        .where(Message.content.isnot(None), Message.created_at >= cutoff)
+        .order_by(Message.created_at.desc())
+        .limit(5000)
+    )
+    rows = (await session.execute(stmt)).all()
+
+    pos_by_day: dict[str, int] = {}
+    neg_by_day: dict[str, int] = {}
+    for row in rows:
+        day_str = row.created_at.strftime("%Y-%m-%d")
+        cleaned = _clean_content(row.content.lower())
+        words = WORD_PATTERN.findall(cleaned)
+        pos = sum(1 for w in words if w in POSITIVE_WORDS)
+        neg = sum(1 for w in words if w in NEGATIVE_WORDS)
+        pos_by_day[day_str] = pos_by_day.get(day_str, 0) + pos
+        neg_by_day[day_str] = neg_by_day.get(day_str, 0) + neg
+
+    return [
+        {
+            "day": (cutoff + timedelta(days=i)).strftime("%Y-%m-%d"),
+            "positive": pos_by_day.get(
+                (cutoff + timedelta(days=i)).strftime("%Y-%m-%d"), 0
+            ),
+            "negative": neg_by_day.get(
+                (cutoff + timedelta(days=i)).strftime("%Y-%m-%d"), 0
+            ),
+        }
+        for i in range(range_days + 1)
     ]

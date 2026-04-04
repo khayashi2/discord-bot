@@ -33,6 +33,9 @@ function escapeHtml(s) {
 const charts = {};
 let currentUserId = null;
 let currentRange = "";
+let currentUserData = null;
+let userCustomChartInstance = null;
+let userCustomTomSelect = null;
 
 function destroyChart(key) {
     if (charts[key]) {
@@ -104,6 +107,9 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
+    /* Init custom view block */
+    initUserCustomBlock();
+
     /* Range picker buttons */
     document.querySelectorAll("#user-range-picker button").forEach(btn => {
         btn.addEventListener("click", async () => {
@@ -125,6 +131,9 @@ function renderUserStats(data) {
     document.getElementById("user-stats").style.display = "block";
     document.getElementById("user-empty").style.display = "none";
 
+    /* Save for custom block */
+    currentUserData = data;
+
     /* Overview stats */
     document.getElementById("user-msg-count").textContent = data.message_count.toLocaleString();
     document.getElementById("user-total-emoji").textContent = (data.emoji_stats?.total_emoji || 0).toLocaleString();
@@ -138,6 +147,10 @@ function renderUserStats(data) {
     renderUserEmoji(data.emoji_stats?.top_emoji || []);
     renderUserPeakHours(data.peak_hours || []);
     renderUserVocabulary(data.vocabulary || { ttr: 0, unique_words: 0, total_words: 0 });
+
+    /* Re-render custom block with new user data */
+    const savedViz = localStorage.getItem("user-custom-viz") || "top-words";
+    renderUserCustomViz(savedViz);
 }
 
 function renderUserActivity(data) {
@@ -290,5 +303,188 @@ function renderUserVocabulary(data) {
     } else {
         statsEl.style.display = "none";
         empty.style.display = "block";
+    }
+}
+
+/* ─── User Page Custom View Block ─── */
+
+const USER_VIZ_REGISTRY = {
+    "top-words": {
+        label: "Top Words",
+        dataKey: "top_words",
+        type: "canvas",
+        render(canvasId, data) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas || !data.length) return null;
+            return new Chart(canvas, {
+                type: "bar",
+                data: {
+                    labels: data.map(d => d.word),
+                    datasets: [{ data: data.map(d => d.count), backgroundColor: COLORS.accentAlt, borderRadius: 4 }],
+                },
+                options: {
+                    scales: {
+                        x: { grid: { display: false }, ticks: { maxRotation: 45 } },
+                        y: { beginAtZero: true, grid: { color: COLORS.grid } },
+                    },
+                },
+            });
+        },
+    },
+    "peak-hours": {
+        label: "Peak Hours",
+        dataKey: "peak_hours",
+        type: "canvas",
+        render(canvasId, data) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas || !data.length) return null;
+            return new Chart(canvas, {
+                type: "bar",
+                data: {
+                    labels: data.map(d => `${d.hour}:00`),
+                    datasets: [{ data: data.map(d => d.count), backgroundColor: COLORS.accent, borderRadius: 4 }],
+                },
+                options: {
+                    scales: {
+                        x: { grid: { display: false }, title: { display: true, text: "Hour (Pacific)", color: COLORS.text } },
+                        y: { beginAtZero: true, grid: { color: COLORS.grid } },
+                    },
+                },
+            });
+        },
+    },
+    "activity": {
+        label: "Activity Over Time",
+        dataKey: "activity",
+        type: "canvas",
+        render(canvasId, data) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas || !data.length) return null;
+            return new Chart(canvas, {
+                type: "line",
+                data: {
+                    labels: data.map(d => d.day),
+                    datasets: [{
+                        data: data.map(d => d.count),
+                        borderColor: COLORS.accent,
+                        backgroundColor: "rgba(233, 69, 96, 0.1)",
+                        fill: true, tension: 0.3, pointRadius: 2,
+                    }],
+                },
+                options: {
+                    scales: {
+                        x: { grid: { display: false }, ticks: { maxTicksLimit: 10 } },
+                        y: { beginAtZero: true, grid: { color: COLORS.grid } },
+                    },
+                },
+            });
+        },
+    },
+    "emoji": {
+        label: "Top Emoji",
+        dataKey: "emoji_stats",
+        type: "html",
+        render(containerId, data) {
+            const el = document.getElementById(containerId);
+            if (!el) return null;
+            const emojis = data?.top_emoji || [];
+            if (!emojis.length) {
+                el.innerHTML = '<p class="empty-state">No emoji data.</p>';
+                return null;
+            }
+            el.innerHTML = emojis.map(e =>
+                `<div class="emoji-item"><span>${escapeHtml(e.emoji)}</span><span class="emoji-count">&times;${e.count}</span></div>`
+            ).join("");
+            el.style.display = "flex";
+            el.style.flexWrap = "wrap";
+            el.style.gap = "0.75rem";
+            return null;
+        },
+    },
+    "profanity": {
+        label: "Profanity Words",
+        dataKey: "profanity_words",
+        type: "html",
+        render(containerId, data) {
+            const el = document.getElementById(containerId);
+            if (!el) return null;
+            if (!data || !data.length) {
+                el.innerHTML = '<p class="empty-state">No profanity data.</p>';
+                return null;
+            }
+            el.innerHTML = data.map(d =>
+                `<div class="emoji-item"><span>${escapeHtml(d.word)}</span><span class="emoji-count">&times;${d.count}</span></div>`
+            ).join("");
+            el.style.display = "flex";
+            el.style.flexWrap = "wrap";
+            el.style.gap = "0.75rem";
+            return null;
+        },
+    },
+};
+
+function initUserCustomBlock() {
+    const selectEl = document.getElementById("user-custom-viz-select");
+    const container = document.getElementById("user-custom-viz-container");
+    if (!selectEl || !container) return;
+
+    for (const [key, viz] of Object.entries(USER_VIZ_REGISTRY)) {
+        const opt = document.createElement("option");
+        opt.value = key;
+        opt.textContent = viz.label;
+        selectEl.appendChild(opt);
+    }
+
+    userCustomTomSelect = new TomSelect(selectEl, {
+        allowEmptyOption: true,
+        placeholder: "Choose a visualization...",
+    });
+
+    const saved = localStorage.getItem("user-custom-viz") || "top-words";
+    userCustomTomSelect.setValue(saved, true);
+    renderUserCustomViz(saved);
+
+    userCustomTomSelect.on("change", (value) => {
+        if (!value) return;
+        localStorage.setItem("user-custom-viz", value);
+        renderUserCustomViz(value, container);
+    });
+}
+
+function renderUserCustomViz(key, container) {
+    if (!container) container = document.getElementById("user-custom-viz-container");
+    if (!container) return;
+
+    if (userCustomChartInstance) {
+        userCustomChartInstance.destroy();
+        userCustomChartInstance = null;
+    }
+    container.innerHTML = "";
+
+    if (!currentUserData) {
+        container.innerHTML = '<p class="empty-state">Select a user first.</p>';
+        return;
+    }
+
+    const viz = USER_VIZ_REGISTRY[key];
+    if (!viz) return;
+
+    const data = currentUserData[viz.dataKey];
+    if (!data || (Array.isArray(data) && data.length === 0)) {
+        container.innerHTML = '<p class="empty-state">No data available for this visualization.</p>';
+        return;
+    }
+
+    const elId = "user-custom-viz-" + key;
+    if (viz.type === "canvas") {
+        const canvas = document.createElement("canvas");
+        canvas.id = elId;
+        container.appendChild(canvas);
+        userCustomChartInstance = viz.render(elId, data);
+    } else {
+        const div = document.createElement("div");
+        div.id = elId;
+        container.appendChild(div);
+        viz.render(elId, data);
     }
 }
