@@ -45,6 +45,9 @@ A Discord bot that tracks server activity and displays fun analytics (top words,
 - PostgreSQL via Docker Compose for all environments
 - Async database access via asyncpg + SQLAlchemy async sessions
 - Dashboard analytics split into `dashboard/queries.py` — each query function returns plain dicts so the route handler stays thin
+- Time-filtered queries — every main query accepts an optional `after` datetime; `cutoff_from_range()` converts `7d`/`30d`/`90d` to a cutoff timestamp
+- Per-user stats via JSON API — `/api/user/{member_id}` returns user analytics as JSON, rendered client-side by `dashboard/static/user.js`
+- Profanity leaderboard — configurable word list loaded from `config/profanity.txt`, cached in `settings.load_profanity_words()`
 
 ## Running Locally
 
@@ -92,6 +95,29 @@ The `dashboard/queries.py` module contains all analytics query functions. Each f
 - **Python-side aggregation for text analytics** — top-words and emoji extraction pull a bounded set of recent rows (5,000 / 2,000) and aggregate with `Counter` in Python. This is simpler than equivalent PostgreSQL functions and fast enough at current scale. Comments in the code flag where to add materialized views if volume grows.
 - **Chart.js via data attributes** — analytics data is serialized into `data-*` attributes on a hidden `<div>`, then read by `dashboard.js` to render charts. This avoids inline `<script>` blocks and keeps JS separate from Jinja2 templates.
 - **Stopword filtering** — top-words results exclude common English stopwords (defined in `queries.py`) so the list shows meaningful vocabulary rather than "the", "and", "is".
+
+### Time-Filtered Dashboard
+
+Every main query function in `queries.py` accepts an optional `after: datetime | None` parameter. The route handler converts the `?range=` query parameter into a cutoff datetime via `cutoff_from_range()`. Key choices:
+
+- **Optional filter pattern** — adding `after` as an optional parameter means queries work unchanged for all-time stats (`after=None`) and filtered views. Each query conditionally appends `.where(Message.created_at >= after)` only when a cutoff is provided.
+- **Server-side filtering** — the range buttons trigger a full page reload with a query parameter. This is simpler than client-side AJAX filtering and keeps the dashboard working without JavaScript for the main view.
+
+### User Stats Page
+
+The `/user` page and `/api/user/{member_id}` endpoint provide per-user analytics. Key choices:
+
+- **JSON API + client-side rendering** — unlike the main dashboard (server-rendered via Jinja2 + `data-*` attributes), user stats are fetched as JSON and rendered by `user.js`. This avoids a page reload when switching users but introduces a second rendering path to maintain.
+- **Dedicated query functions** — each per-user query (`get_user_top_words`, `get_user_activity_over_time`, etc.) mirrors the server-wide version but filters by `member_id`. These are separate functions rather than adding a `member_id` parameter to existing queries, keeping each function focused and testable.
+- **Member existence check** — the API returns 404 for unknown member IDs rather than silently returning empty data, so client-side code can distinguish "no data yet" from "bad ID".
+
+### Profanity Leaderboard
+
+The `get_profanity_leaderboard()` query scans recent messages and counts profanity hits per user. Key choices:
+
+- **File-based word list** — profanity words are loaded from `config/profanity.txt` (one word per line, `#` comments supported). This makes the list editable by server admins without code changes.
+- **Cached loading** — `settings.load_profanity_words()` reads the file once and caches the result as a `frozenset` for O(1) membership checks. Subsequent calls return the cached set. There is no reload mechanism — the bot or dashboard must be restarted to pick up changes to `profanity.txt`.
+- **Python-side counting** — like top-words and emoji stats, profanity counting is done in Python over a bounded set of messages (10,000). The same scalability comments apply.
 
 ## Coding Standards and Best Practices
 
