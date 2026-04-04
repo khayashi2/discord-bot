@@ -57,7 +57,7 @@ def _is_filtered_word(word: str) -> bool:
     return word in STOPWORDS or word in FILTERED_WORDS
 
 
-def _cutoff_from_range(range_key: str | None) -> datetime | None:
+def cutoff_from_range(range_key: str | None) -> datetime | None:
     """Convert a range key like '7d', '30d', '90d' to a cutoff datetime."""
     if not range_key:
         return None
@@ -91,13 +91,12 @@ async def get_overview(session: AsyncSession, after: datetime | None = None) -> 
         .label("total_channels")
     )
 
+    today_cutoff = after if (after and after > today_start) else today_start
     today_filter = (
         select(func.count())
         .select_from(Message)
-        .where(Message.created_at >= today_start)
+        .where(Message.created_at >= today_cutoff)
     )
-    if after and after > today_start:
-        today_filter = today_filter.where(Message.created_at >= after)
     msgs_today = today_filter.scalar_subquery().label("messages_today")
 
     stmt = select(total_msgs, total_members, total_channels, msgs_today)
@@ -162,10 +161,12 @@ async def get_top_channels(
     return [{"name": r.name, "count": r.count} for r in rows]
 
 
-async def get_activity_over_time(session: AsyncSession, days: int = 30) -> list[dict]:
+async def get_activity_over_time(
+    session: AsyncSession, days: int = 30, after: datetime | None = None
+) -> list[dict]:
     """Return daily message counts for the last N days, including zero-activity days."""
     now = datetime.now(UTC)
-    cutoff = now - timedelta(days=days)
+    cutoff = after if after else now - timedelta(days=days)
     day_col = func.date_trunc("day", Message.created_at).label("day")
     stmt = (
         select(day_col, func.count().label("count"))
@@ -173,30 +174,31 @@ async def get_activity_over_time(session: AsyncSession, days: int = 30) -> list[
         .group_by(day_col)
         .order_by(day_col)
     )
+    range_days = (now - cutoff).days
     rows = (await session.execute(stmt)).all()
 
     # Build a lookup and fill in days with zero messages
     counts_by_day = {r.day.strftime("%Y-%m-%d"): r.count for r in rows}
     result = []
-    for i in range(days + 1):
+    for i in range(range_days + 1):
         day_str = (cutoff + timedelta(days=i)).strftime("%Y-%m-%d")
         result.append({"day": day_str, "count": counts_by_day.get(day_str, 0)})
     return result
 
 
-async def get_top_words(session: AsyncSession, limit: int = 20) -> list[dict]:
+async def get_top_words(
+    session: AsyncSession, limit: int = 20, after: datetime | None = None
+) -> list[dict]:
     """Return the most frequently used words across recent messages.
 
     NOTE: Word counting is done in Python over the 5,000 most recent messages.
     At high volume, consider moving this to a materialized view or PostgreSQL
     full-text search aggregation.
     """
-    stmt = (
-        select(Message.content)
-        .where(Message.content.isnot(None))
-        .order_by(Message.created_at.desc())
-        .limit(5000)
-    )
+    stmt = select(Message.content).where(Message.content.isnot(None))
+    if after:
+        stmt = stmt.where(Message.created_at >= after)
+    stmt = stmt.order_by(Message.created_at.desc()).limit(5000)
     rows = (await session.execute(stmt)).scalars().all()
 
     counter: Counter[str] = Counter()
@@ -210,14 +212,15 @@ async def get_top_words(session: AsyncSession, limit: int = 20) -> list[dict]:
     ]
 
 
-async def get_emoji_stats(session: AsyncSession) -> dict:
+async def get_emoji_stats(session: AsyncSession, after: datetime | None = None) -> dict:
     """Return emoji usage statistics."""
-    total_emoji = await session.scalar(
-        select(func.coalesce(func.sum(Message.emoji_count), 0))
-    )
-    msgs_with_emoji = await session.scalar(
-        select(func.count()).select_from(Message).where(Message.emoji_count > 0)
-    )
+    total_q = select(func.coalesce(func.sum(Message.emoji_count), 0))
+    count_q = select(func.count()).select_from(Message).where(Message.emoji_count > 0)
+    if after:
+        total_q = total_q.where(Message.created_at >= after)
+        count_q = count_q.where(Message.created_at >= after)
+    total_emoji = await session.scalar(total_q)
+    msgs_with_emoji = await session.scalar(count_q)
 
     # Extract top individual emoji from recent messages.
     # NOTE: Emoji extraction is done in Python over 2,000 rows. At high
@@ -226,8 +229,10 @@ async def get_emoji_stats(session: AsyncSession) -> dict:
         select(Message.content)
         .where(Message.emoji_count > 0)
         .order_by(Message.created_at.desc())
-        .limit(2000)
     )
+    if after:
+        stmt = stmt.where(Message.created_at >= after)
+    stmt = stmt.limit(2000)
     rows = (await session.execute(stmt)).scalars().all()
 
     emoji_counter: Counter[str] = Counter()
@@ -246,26 +251,27 @@ async def get_emoji_stats(session: AsyncSession) -> dict:
     }
 
 
-async def get_message_length_stats(session: AsyncSession) -> dict:
+async def get_message_length_stats(
+    session: AsyncSession, after: datetime | None = None
+) -> dict:
     """Return message length distribution stats."""
-    avg_length = await session.scalar(
-        select(func.coalesce(func.avg(Message.content_length), 0))
-    )
-    max_length = await session.scalar(
-        select(func.coalesce(func.max(Message.content_length), 0))
-    )
+    base = select(func.count()).select_from(Message)
+    avg_q = select(func.coalesce(func.avg(Message.content_length), 0))
+    max_q = select(func.coalesce(func.max(Message.content_length), 0))
+    if after:
+        base = base.where(Message.created_at >= after)
+        avg_q = avg_q.where(Message.created_at >= after)
+        max_q = max_q.where(Message.created_at >= after)
 
-    short = await session.scalar(
-        select(func.count()).select_from(Message).where(Message.content_length < 50)
-    )
-    medium = await session.scalar(
-        select(func.count())
-        .select_from(Message)
-        .where(Message.content_length.between(50, 200))
-    )
-    long_ = await session.scalar(
-        select(func.count()).select_from(Message).where(Message.content_length > 200)
-    )
+    avg_length = await session.scalar(avg_q)
+    max_length = await session.scalar(max_q)
+
+    short_q = base.where(Message.content_length < 50)
+    medium_q = base.where(Message.content_length.between(50, 200))
+    long_q = base.where(Message.content_length > 200)
+    short = await session.scalar(short_q)
+    medium = await session.scalar(medium_q)
+    long_ = await session.scalar(long_q)
 
     return {
         "avg_length": round(float(avg_length or 0)),
@@ -353,7 +359,7 @@ async def get_user_message_count(session: AsyncSession, member_id: int) -> int:
 
 
 async def get_profanity_leaderboard(
-    session: AsyncSession, limit: int = 10
+    session: AsyncSession, limit: int = 10, after: datetime | None = None
 ) -> list[dict]:
     """Return the top users by profanity usage in recent messages."""
 
@@ -365,14 +371,16 @@ async def get_profanity_leaderboard(
         select(Message.author_id, Message.content)
         .join(Member, Message.author_id == Member.id)
         .where(Member.is_bot.is_(False), Message.content.isnot(None))
-        .order_by(Message.created_at.desc())
-        .limit(10000)  # Cap to bound memory usage; counts reflect recent activity
     )
+    if after:
+        stmt = stmt.where(Message.created_at >= after)
+    stmt = stmt.order_by(Message.created_at.desc()).limit(10000)
     rows = (await session.execute(stmt)).all()
 
     counter: Counter[int] = Counter()
     for row in rows:
-        words = WORD_PATTERN.findall(row.content.lower())
+        cleaned = _clean_content(row.content.lower())
+        words = WORD_PATTERN.findall(cleaned)
         count = sum(1 for w in words if w in profanity_words)
         if count:
             counter[row.author_id] += count
@@ -400,3 +408,105 @@ async def get_profanity_leaderboard(
         for author_id, count in counter.most_common(limit)
         if author_id in member_map
     ]
+
+
+async def get_user_activity_over_time(
+    session: AsyncSession, member_id: int, days: int = 30
+) -> list[dict]:
+    """Return daily message counts for a specific user over the last N days."""
+    now = datetime.now(UTC)
+    cutoff = now - timedelta(days=days)
+    day_col = func.date_trunc("day", Message.created_at).label("day")
+    stmt = (
+        select(day_col, func.count().label("count"))
+        .where(Message.author_id == member_id, Message.created_at >= cutoff)
+        .group_by(day_col)
+        .order_by(day_col)
+    )
+    rows = (await session.execute(stmt)).all()
+
+    counts_by_day = {r.day.strftime("%Y-%m-%d"): r.count for r in rows}
+    result = []
+    for i in range(days + 1):
+        day_str = (cutoff + timedelta(days=i)).strftime("%Y-%m-%d")
+        result.append({"day": day_str, "count": counts_by_day.get(day_str, 0)})
+    return result
+
+
+async def get_user_top_channels(
+    session: AsyncSession, member_id: int, limit: int = 10
+) -> list[dict]:
+    """Return the channels where a specific user posts most."""
+    stmt = (
+        select(Channel.name, func.count().label("count"))
+        .join(Message, Message.channel_id == Channel.id)
+        .where(Message.author_id == member_id)
+        .group_by(Channel.id)
+        .order_by(literal_column("count").desc())
+        .limit(limit)
+    )
+    rows = (await session.execute(stmt)).all()
+    return [{"name": r.name, "count": r.count} for r in rows]
+
+
+async def get_user_message_length_distribution(
+    session: AsyncSession, member_id: int
+) -> dict:
+    """Return message length distribution for a specific user."""
+    base = (
+        select(func.count()).select_from(Message).where(Message.author_id == member_id)
+    )
+    avg_length = await session.scalar(
+        select(func.coalesce(func.avg(Message.content_length), 0)).where(
+            Message.author_id == member_id
+        )
+    )
+    short = await session.scalar(base.where(Message.content_length < 50))
+    medium = await session.scalar(base.where(Message.content_length.between(50, 200)))
+    long_ = await session.scalar(base.where(Message.content_length > 200))
+
+    return {
+        "avg_length": round(float(avg_length or 0)),
+        "short": short or 0,
+        "medium": medium or 0,
+        "long": long_ or 0,
+    }
+
+
+async def get_user_emoji_stats(session: AsyncSession, member_id: int) -> dict:
+    """Return emoji usage statistics for a specific user."""
+    total_emoji = await session.scalar(
+        select(func.coalesce(func.sum(Message.emoji_count), 0)).where(
+            Message.author_id == member_id
+        )
+    )
+    msgs_with_emoji = await session.scalar(
+        select(func.count())
+        .select_from(Message)
+        .where(Message.author_id == member_id, Message.emoji_count > 0)
+    )
+
+    stmt = (
+        select(Message.content)
+        .where(
+            Message.author_id == member_id,
+            Message.emoji_count > 0,
+            Message.content.isnot(None),
+        )
+        .order_by(Message.created_at.desc())
+        .limit(2000)
+    )
+    rows = (await session.execute(stmt)).scalars().all()
+
+    emoji_counter: Counter[str] = Counter()
+    for content in rows:
+        emoji_counter.update(EMOJI_PATTERN.findall(content))
+
+    return {
+        "total_emoji": total_emoji or 0,
+        "msgs_with_emoji": msgs_with_emoji or 0,
+        "top_emoji": [
+            {"emoji": emoji, "count": count}
+            for emoji, count in emoji_counter.most_common(10)
+        ],
+    }

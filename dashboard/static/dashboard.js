@@ -182,6 +182,33 @@ function renderProfanity(canvasId, data) {
     });
 }
 
+/**
+ * Render a doughnut chart for message length distribution.
+ */
+function renderMessageLengths(canvasId, data) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const total = (data.short || 0) + (data.medium || 0) + (data.long || 0);
+    if (!total) return;
+
+    new Chart(canvas, {
+        type: "doughnut",
+        data: {
+            labels: ["Short (<50)", "Medium (50-200)", "Long (>200)"],
+            datasets: [{
+                data: [data.short, data.medium, data.long],
+                backgroundColor: [COLORS.bars[3], COLORS.bars[0], COLORS.bars[1]],
+                borderWidth: 0,
+            }],
+        },
+        options: {
+            plugins: {
+                legend: { display: true, position: "bottom", labels: { color: COLORS.text } },
+            },
+        },
+    });
+}
+
 /* Initialize charts once the DOM is ready */
 document.addEventListener("DOMContentLoaded", () => {
     /* Parse data from HTML data attributes (avoids inline script XSS) */
@@ -191,10 +218,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const activityData = JSON.parse(dataEl.dataset.activity);
     const topWordsData = JSON.parse(dataEl.dataset.topWords);
     const profanityData = JSON.parse(dataEl.dataset.profanity);
+    const messageLengthsData = JSON.parse(dataEl.dataset.messageLengths);
 
     renderTopUsers("topUsersChart", topUsersData);
     renderTopChannels("topChannelsChart", topChannelsData);
     renderActivity("activityChart", activityData);
     renderTopWords("topWordsChart", topWordsData);
     renderProfanity("profanityChart", profanityData);
+    renderMessageLengths("messageLengthChart", messageLengthsData);
 });

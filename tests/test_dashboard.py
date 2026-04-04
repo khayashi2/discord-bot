@@ -119,6 +119,13 @@ MOCK_QUERY_RESULTS = {
     "get_profanity_leaderboard": [
         {"display_name": "Bob", "avatar_url": None, "count": 42},
     ],
+    "get_message_length_stats": {
+        "avg_length": 75,
+        "max_length": 500,
+        "short": 100,
+        "medium": 200,
+        "long": 50,
+    },
 }
 
 
@@ -195,6 +202,13 @@ async def test_index_handles_empty_data():
         "get_top_words": [],
         "get_emoji_stats": {"total_emoji": 0, "msgs_with_emoji": 0, "top_emoji": []},
         "get_profanity_leaderboard": [],
+        "get_message_length_stats": {
+            "avg_length": 0,
+            "max_length": 0,
+            "short": 0,
+            "medium": 0,
+            "long": 0,
+        },
     }
 
     with ExitStack() as stack:
@@ -243,9 +257,17 @@ async def test_user_page_returns_html():
 
 @pytest.mark.asyncio
 async def test_user_stats_api_returns_json():
-    """User stats API should return JSON with top words, emoji, and count."""
+    """User stats API should return JSON with analytics for an existing member."""
     with ExitStack() as stack:
-        _patch_session(stack)
+        mock_session_factory = stack.enter_context(patch("dashboard.app.async_session"))
+        mock_session = AsyncMock()
+        # Return 1 for the member-existence check (session.scalar)
+        mock_session.scalar = AsyncMock(return_value=1)
+        mock_session_factory.return_value.__aenter__ = AsyncMock(
+            return_value=mock_session
+        )
+        mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+
         stack.enter_context(
             patch(
                 "dashboard.app.get_user_top_words",
@@ -254,14 +276,45 @@ async def test_user_stats_api_returns_json():
         )
         stack.enter_context(
             patch(
-                "dashboard.app.get_user_top_emoji",
-                AsyncMock(return_value=[{"emoji": "\U0001f60a", "count": 5}]),
+                "dashboard.app.get_user_message_count",
+                AsyncMock(return_value=100),
             )
         )
         stack.enter_context(
             patch(
-                "dashboard.app.get_user_message_count",
-                AsyncMock(return_value=100),
+                "dashboard.app.get_user_activity_over_time",
+                AsyncMock(return_value=[{"day": "2026-04-01", "count": 10}]),
+            )
+        )
+        stack.enter_context(
+            patch(
+                "dashboard.app.get_user_top_channels",
+                AsyncMock(return_value=[{"name": "general", "count": 50}]),
+            )
+        )
+        stack.enter_context(
+            patch(
+                "dashboard.app.get_user_message_length_distribution",
+                AsyncMock(
+                    return_value={
+                        "avg_length": 75,
+                        "short": 10,
+                        "medium": 20,
+                        "long": 5,
+                    }
+                ),
+            )
+        )
+        stack.enter_context(
+            patch(
+                "dashboard.app.get_user_emoji_stats",
+                AsyncMock(
+                    return_value={
+                        "total_emoji": 30,
+                        "msgs_with_emoji": 15,
+                        "top_emoji": [{"emoji": "\U0001f60a", "count": 10}],
+                    }
+                ),
             )
         )
 
@@ -273,4 +326,28 @@ async def test_user_stats_api_returns_json():
         data = response.json()
         assert data["message_count"] == 100
         assert data["top_words"][0]["word"] == "hello"
-        assert len(data["top_emoji"]) == 1
+        assert data["activity"][0]["day"] == "2026-04-01"
+        assert data["top_channels"][0]["name"] == "general"
+        assert data["message_lengths"]["avg_length"] == 75
+        assert data["emoji_stats"]["total_emoji"] == 30
+
+
+@pytest.mark.asyncio
+async def test_user_stats_api_returns_404_for_unknown_member():
+    """User stats API should return 404 for a non-existent member."""
+    with ExitStack() as stack:
+        mock_session_factory = stack.enter_context(patch("dashboard.app.async_session"))
+        mock_session = AsyncMock()
+        # Return 0 for the member-existence check
+        mock_session.scalar = AsyncMock(return_value=0)
+        mock_session_factory.return_value.__aenter__ = AsyncMock(
+            return_value=mock_session
+        )
+        mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/api/user/999999")
+
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Member not found"
