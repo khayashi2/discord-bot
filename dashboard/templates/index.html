@@ -152,6 +152,14 @@
 {% endblock %}
 
 {% block content %}
+<!-- Sticky range bar -->
+<div id="sticky-range-bar" class="sticky-range-bar">
+    <a href="/?range=7d" {% if active_range == '7d' %}class="active"{% endif %}>7 Days</a>
+    <a href="/?range=30d" {% if active_range == '30d' %}class="active"{% endif %}>30 Days</a>
+    <a href="/?range=90d" {% if active_range == '90d' %}class="active"{% endif %}>90 Days</a>
+    <a href="/" {% if not active_range %}class="active"{% endif %}>All Time</a>
+</div>
+
 <!-- Time range filter -->
 <div class="range-picker">
     <a href="/?range=7d" {% if active_range == '7d' %}class="active"{% endif %}>7 Days</a>

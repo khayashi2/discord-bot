@@ -110,12 +110,32 @@ document.addEventListener("DOMContentLoaded", () => {
     /* Init custom view block */
     initUserCustomBlock();
 
-    /* Range picker buttons */
+    /* Range switching helper — syncs both original and sticky buttons */
+    function switchRange(range) {
+        document.querySelectorAll("#user-range-picker button, #sticky-user-range button").forEach(b => {
+            b.classList.toggle("active", b.dataset.range === range);
+        });
+        currentRange = range;
+    }
+
+    /* Range picker buttons (original) */
     document.querySelectorAll("#user-range-picker button").forEach(btn => {
         btn.addEventListener("click", async () => {
-            document.querySelectorAll("#user-range-picker button").forEach(b => b.classList.remove("active"));
-            btn.classList.add("active");
-            currentRange = btn.dataset.range;
+            switchRange(btn.dataset.range);
+            if (currentUserId) {
+                try {
+                    await loadUserStats(currentUserId, currentRange);
+                } catch (err) {
+                    console.error("Failed to load user stats:", err);
+                }
+            }
+        });
+    });
+
+    /* Sticky range buttons */
+    document.querySelectorAll("#sticky-user-range button").forEach(btn => {
+        btn.addEventListener("click", async () => {
+            switchRange(btn.dataset.range);
             if (currentUserId) {
                 try {
                     await loadUserStats(currentUserId, currentRange);
@@ -142,14 +162,10 @@ function renderUserStats(data) {
     document.getElementById("activity-heading").textContent = RANGE_LABELS[currentRange] || "Activity (All Time)";
 
     renderUserActivity(data.activity || []);
-    renderUserWords(data.top_words || []);
-    renderUserProfanity(data.profanity_words || []);
-    renderUserEmoji(data.emoji_stats?.top_emoji || []);
-    renderUserPeakHours(data.peak_hours || []);
-    renderUserVocabulary(data.vocabulary || { ttr: 0, unique_words: 0, total_words: 0 });
 
     /* Re-render custom block with new user data */
-    const savedViz = localStorage.getItem("user-custom-viz") || "top-words";
+    let savedViz = localStorage.getItem("user-custom-viz") || "top-words";
+    if (!USER_VIZ_REGISTRY[savedViz]) savedViz = "top-words";
     renderUserCustomViz(savedViz);
 }
 
@@ -186,122 +202,6 @@ function renderUserActivity(data) {
         });
     } else {
         canvas.style.display = "none";
-        empty.style.display = "block";
-    }
-}
-
-function renderUserWords(data) {
-    destroyChart("words");
-    const canvas = document.getElementById("userWordsChart");
-    const empty = document.getElementById("userWordsEmpty");
-    if (data.length) {
-        canvas.style.display = "block";
-        empty.style.display = "none";
-        charts.words = new Chart(canvas, {
-            type: "bar",
-            data: {
-                labels: data.map(d => d.word),
-                datasets: [{
-                    data: data.map(d => d.count),
-                    backgroundColor: COLORS.accentAlt,
-                    borderRadius: 4,
-                }],
-            },
-            options: {
-                scales: {
-                    x: { grid: { display: false }, ticks: { maxRotation: 45 } },
-                    y: {
-                        beginAtZero: true,
-                        grid: { color: COLORS.grid },
-                        title: { display: true, text: "Occurrences", color: COLORS.text },
-                    },
-                },
-            },
-        });
-    } else {
-        canvas.style.display = "none";
-        empty.style.display = "block";
-    }
-}
-
-function renderUserProfanity(data) {
-    const container = document.getElementById("userProfanityList");
-    const empty = document.getElementById("userProfanityEmpty");
-    if (data.length) {
-        container.style.display = "flex";
-        empty.style.display = "none";
-        container.innerHTML = data.map(d =>
-            `<div class="emoji-item"><span>${escapeHtml(d.word)}</span><span class="emoji-count">&times;${d.count}</span></div>`
-        ).join("");
-    } else {
-        container.style.display = "none";
-        empty.style.display = "block";
-    }
-}
-
-function renderUserEmoji(data) {
-    const container = document.getElementById("userEmojiList");
-    const empty = document.getElementById("userEmojiEmpty");
-    if (data.length) {
-        container.style.display = "flex";
-        empty.style.display = "none";
-        container.innerHTML = data.map(e =>
-            `<div class="emoji-item"><span>${escapeHtml(e.emoji)}</span><span class="emoji-count">&times;${e.count}</span></div>`
-        ).join("");
-    } else {
-        container.style.display = "none";
-        empty.style.display = "block";
-    }
-}
-
-function renderUserPeakHours(data) {
-    destroyChart("peakHours");
-    const canvas = document.getElementById("userPeakHoursChart");
-    const empty = document.getElementById("userPeakHoursEmpty");
-    if (data.length) {
-        canvas.style.display = "block";
-        empty.style.display = "none";
-        charts.peakHours = new Chart(canvas, {
-            type: "bar",
-            data: {
-                labels: data.map(d => `${d.hour}:00`),
-                datasets: [{
-                    data: data.map(d => d.count),
-                    backgroundColor: COLORS.accent,
-                    borderRadius: 4,
-                }],
-            },
-            options: {
-                scales: {
-                    x: {
-                        grid: { display: false },
-                        title: { display: true, text: "Hour (Pacific)", color: COLORS.text },
-                    },
-                    y: {
-                        beginAtZero: true,
-                        grid: { color: COLORS.grid },
-                        title: { display: true, text: "Messages", color: COLORS.text },
-                    },
-                },
-            },
-        });
-    } else {
-        canvas.style.display = "none";
-        empty.style.display = "block";
-    }
-}
-
-function renderUserVocabulary(data) {
-    const statsEl = document.getElementById("userVocabStats");
-    const empty = document.getElementById("userVocabEmpty");
-    if (data.total_words > 0) {
-        statsEl.style.display = "grid";
-        empty.style.display = "none";
-        document.getElementById("user-ttr").textContent = data.ttr.toFixed(3);
-        document.getElementById("user-unique-words").textContent = data.unique_words.toLocaleString();
-        document.getElementById("user-total-words").textContent = data.total_words.toLocaleString();
-    } else {
-        statsEl.style.display = "none";
         empty.style.display = "block";
     }
 }
@@ -347,33 +247,6 @@ const USER_VIZ_REGISTRY = {
                 options: {
                     scales: {
                         x: { grid: { display: false }, title: { display: true, text: "Hour (Pacific)", color: COLORS.text } },
-                        y: { beginAtZero: true, grid: { color: COLORS.grid } },
-                    },
-                },
-            });
-        },
-    },
-    "activity": {
-        label: "Activity Over Time",
-        dataKey: "activity",
-        type: "canvas",
-        render(canvasId, data) {
-            const canvas = document.getElementById(canvasId);
-            if (!canvas || !data.length) return null;
-            return new Chart(canvas, {
-                type: "line",
-                data: {
-                    labels: data.map(d => d.day),
-                    datasets: [{
-                        data: data.map(d => d.count),
-                        borderColor: COLORS.accent,
-                        backgroundColor: "rgba(233, 69, 96, 0.1)",
-                        fill: true, tension: 0.3, pointRadius: 2,
-                    }],
-                },
-                options: {
-                    scales: {
-                        x: { grid: { display: false }, ticks: { maxTicksLimit: 10 } },
                         y: { beginAtZero: true, grid: { color: COLORS.grid } },
                     },
                 },
@@ -426,6 +299,7 @@ const USER_VIZ_REGISTRY = {
 function initUserCustomBlock() {
     const selectEl = document.getElementById("user-custom-viz-select");
     const container = document.getElementById("user-custom-viz-container");
+    const heading = document.getElementById("user-custom-block-heading");
     if (!selectEl || !container) return;
 
     for (const [key, viz] of Object.entries(USER_VIZ_REGISTRY)) {
@@ -440,14 +314,20 @@ function initUserCustomBlock() {
         placeholder: "Choose a visualization...",
     });
 
-    const saved = localStorage.getItem("user-custom-viz") || "top-words";
+    let saved = localStorage.getItem("user-custom-viz") || "top-words";
+    if (!USER_VIZ_REGISTRY[saved]) saved = "top-words";
     userCustomTomSelect.setValue(saved, true);
     renderUserCustomViz(saved);
+    if (heading && USER_VIZ_REGISTRY[saved]) heading.textContent = USER_VIZ_REGISTRY[saved].label;
 
     userCustomTomSelect.on("change", (value) => {
-        if (!value) return;
+        if (!value) {
+            if (heading) heading.textContent = "Custom View";
+            return;
+        }
         localStorage.setItem("user-custom-viz", value);
         renderUserCustomViz(value, container);
+        if (heading && USER_VIZ_REGISTRY[value]) heading.textContent = USER_VIZ_REGISTRY[value].label;
     });
 }
 
