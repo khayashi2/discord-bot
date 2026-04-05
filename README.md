@@ -17,8 +17,8 @@ A Discord bot that tracks server activity and displays fun analytics on a web da
 - **Historical Backfill** — a one-off script ingests all past messages from every text channel, with batched commits and per-channel error handling
 - **Web Dashboard** — a FastAPI-powered analytics dashboard with a streamlined landing page: daily/weekly digest, overview stats, channel activity, activity trend, most active users, a customizable visualization block, and awards & superlatives. All other visualizations (word cloud, top words, profanity, emoji, sentiment, heatmap, vocabulary diversity, conversation flow, peak hours, reaction time kings, server growth) are accessible via the Custom View dropdown
 - **Customizable Dashboard Block** — a dropdown (Tom Select) on both the landing page and user stats page where end-users can choose which visualization to display; the card heading dynamically shows the selected visualization name (e.g., "Word Cloud" instead of "Custom View"); selection persists via localStorage
-- **Time-Filtered Analytics** — dashboard supports 7-day, 30-day, and 90-day time range filters so you can view activity over any recent window
-- **User Stats Page** — a dedicated per-user analytics page with a member dropdown, time-range filtering (7d/30d/90d), a sticky header showing the selected user as you scroll, and a custom view block; includes top words, activity over time, emoji usage, top profanity words, peak hours, and vocabulary diversity
+- **Time-Filtered Analytics** — dashboard supports 7-day, 30-day, and 90-day time range filters with a sticky range bar that follows you as you scroll, so you can change the filter from anywhere on the page
+- **User Stats Page** — a dedicated per-user analytics page with a streamlined layout mirroring the landing page: stat cards, activity chart, and a Custom View dropdown for all other visualizations (top words, emoji, profanity, peak hours). Includes a sticky header showing the selected user and range buttons as you scroll
 - **Profanity Leaderboard** — ranks users by profanity usage using a configurable word list (`config/profanity.txt`), with a collapsible reference showing all tracked words and per-user profanity breakdowns on the user stats page
 - **Activity Heatmap** — a day-of-week × hour-of-day grid showing when the server is most active, with color intensity based on message volume (hours in Pacific Time, auto-adjusts for PST/PDT)
 - **Awards & Superlatives** — fun badges highlighting server members: Night Owl, Early Bird, Emoji Monarch, Novelist, Chatterbox, Editor, and Attachment Pro
@@ -276,13 +276,13 @@ This section documents the "why" behind key decisions — useful context if you'
 
 **Consider:** Unlike the main dashboard (which uses `<a>` tags and full page reloads), the user page uses `<button>` elements with JavaScript click handlers since user selection already works client-side. The selected range persists when switching between users — it's treated as a user preference about the time window, not tied to a specific member.
 
-### Sticky User Header
+### Sticky User Header & Range Bar
 
-**What:** A fixed header that appears at the top of the page when you scroll past the user selector, showing the selected user's display name.
+**What:** A fixed header that appears at the top of the user page when you scroll past the selector, showing the selected user's display name and time-range buttons (7d/30d/90d/All). The landing page has a separate sticky range bar that appears when the original filter scrolls out of view.
 
-**Why:** The user stats page can get long with multiple chart panels. Without a sticky header, you lose context about whose stats you're viewing once the selector scrolls out of view. This is a common UX pattern for dashboards with selectable entities.
+**Why:** Long dashboard pages mean losing context — whose stats am I viewing? What time range is selected? The sticky header solves both on the user page. The landing page's sticky range bar lets you change filters without scrolling back to the top.
 
-**Consider:** The header uses `IntersectionObserver` to detect when the selector card scrolls out of view, rather than a scroll event listener. This is more performant (no debouncing needed) and the browser handles the observation natively. The header has a CSS transition for smooth appear/disappear.
+**Consider:** Both use `IntersectionObserver` (not scroll listeners) for performance. The user page uses a `switchRange()` helper to keep original and sticky range buttons in sync — clicking either updates both sets and reloads data. The landing page's sticky bar uses simple `<a>` tags (same as the original filter) since range changes trigger a page reload anyway.
 
 ### Pacific Time Conversion
 
@@ -352,7 +352,7 @@ This section documents the "why" behind key decisions — useful context if you'
 
 **What:** A dropdown (Tom Select) on both the landing page and user stats page where end-users can select which visualization to display in a dedicated card. The card heading dynamically shows the name of the selected visualization (e.g., "Word Cloud" instead of a static "Custom View" label). The selection persists via `localStorage`.
 
-**Why:** The landing page was simplified to show only core stats (digest, overview, channel activity, activity chart, most active users, awards). All other visualizations — word cloud, top words, profanity, emoji, sentiment, heatmap, vocabulary diversity, conversation flow, peak hours, reaction time, server growth — are accessible through the Custom View dropdown. This keeps the page scannable while still giving users access to every metric.
+**Why:** Both pages were simplified to show only core stats as static cards (landing: digest, overview, channel activity, activity chart, most active users, awards; user: stat cards, activity chart). All other visualizations are accessible through the Custom View dropdown. This keeps pages scannable while still giving users access to every metric.
 
 **Consider:** The implementation uses a `VIZ_REGISTRY` pattern — a plain object mapping keys to `{label, dataKey, render, type}`. Adding a new visualization to the dropdown only requires one new registry entry. Visualizations that are already displayed as static cards on the page (like Most Active Users) are excluded from the registry to avoid duplication. Chart.js instances are tracked and properly destroyed before re-rendering to prevent memory leaks. The `div`-type renders (heatmap, network) need different container setup than `canvas`-type renders.
 

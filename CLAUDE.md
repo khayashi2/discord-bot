@@ -56,7 +56,8 @@ A Discord bot that tracks server activity and displays fun analytics (top words,
 - Reaction time kings — `get_reaction_time_kings()` reuses the consecutive-message pairing logic from conversation flow to compute average response times per user; minimum 3 responses to qualify
 - Per-user peak hours — `get_user_peak_hours()` mirrors the server-wide peak hours but filtered by `member_id`; uses Pacific Time via `func.timezone("US/Pacific", ...)`
 - Per-user vocabulary diversity — `get_user_vocabulary_diversity()` computes TTR for a single user; returns `{"ttr", "unique_words", "total_words"}`; minimum 10 words threshold (returns `total_words: 0` when under threshold)
-- Sticky user header — `IntersectionObserver` on the user selector card triggers a fixed header showing the selected user's display name when scrolling past the selector
+- Sticky user header — `IntersectionObserver` on the user selector card triggers a fixed header showing the selected user's display name and range buttons when scrolling past the selector; `switchRange()` helper syncs original and sticky range buttons; `pointer-events: auto` added to `.visible` state for clickable buttons
+- Sticky range bar (landing page) — `IntersectionObserver` on `.range-picker` shows a fixed `#sticky-range-bar` with the same `<a>` links; shared `.sticky-range-bar` CSS in `base.html`
 - Removed panels — Message Lengths and Most Active Channels were removed from both the landing page and user page to focus on more engaging analytics. The query functions (`get_message_length_stats`, `get_top_channels`, `get_user_message_length_distribution`, `get_user_top_channels`) still exist in `queries.py` but are no longer called from `app.py`
 - Channel activity list — `get_channel_activity()` uses `LEFT JOIN` with `MAX(created_at)` to show all indexed channels with message count and last active date; server-rendered table
 - Daily/weekly digest — `get_digest()` computes today-vs-yesterday and this-week-vs-last-week deltas for messages and active users; no `after` param (always relative to now)
@@ -65,7 +66,7 @@ A Discord bot that tracks server activity and displays fun analytics (top words,
 - Message sentiment trend — `get_sentiment_trend()` uses module-level `POSITIVE_WORDS`/`NEGATIVE_WORDS` frozensets (~20 words each); Python-side keyword counting over 5,000 recent messages; dual-line Chart.js chart
 - "Who Talks to Whom" network — adjacency heatmap grid rendered from `get_conversation_flow()` data; toggle button switches between visual heatmap and text table in the same card
 - Customizable dashboard block — `VIZ_REGISTRY` pattern maps visualization keys to `{label, dataKey, render, type}` objects; Tom Select dropdown with localStorage persistence; heading dynamically shows selected viz name; `top-users` excluded from registry (already a static card); appears on both landing page and user stats page with separate registries
-- Streamlined landing page — simplified to: digest, overview stats, channel activity, activity chart, most active users (standalone full-width card), custom view dropdown, awards & superlatives; all other visualizations (word cloud, top words, profanity, emoji, sentiment, heatmap, vocabulary, conversation flow, peak hours, reaction time, server growth) accessible only via Custom View
+- Streamlined pages — landing page simplified to: digest, overview stats, channel activity, activity chart, most active users, custom view dropdown, awards; user page simplified to: stat cards, activity chart, custom view dropdown. All other visualizations accessible only via Custom View on both pages
 - CDN dependencies — wordcloud2.js and Tom Select CSS/JS loaded in `base.html` for shared use; Tom Select dark theme overrides in base styles
 
 ## Running Locally
@@ -202,12 +203,14 @@ The `/api/user/{member_id}` endpoint now accepts an optional `?range=7d|30d|90d`
 - **Range persists across user switches** — the time range is a user preference, not tied to a specific member. Switching from Alice to Bob keeps the same 7d/30d/90d filter applied.
 - **All user query functions accept `after`** — `get_user_top_words`, `get_user_message_count`, `get_user_activity_over_time`, `get_user_emoji_stats`, `get_user_top_profanity_words`, `get_user_peak_hours`, and `get_user_vocabulary_diversity` all accept `after: datetime | None = None`. The pattern is identical to the server-wide queries.
 
-### Sticky User Header
+### Sticky User Header & Range Bar
 
-The user page displays a fixed header with the selected user's display name when scrolling past the selector card. Key choices:
+The user page displays a fixed header with the selected user's display name and range buttons when scrolling past the selector card. The landing page has a separate sticky range bar. Key choices:
 
-- **IntersectionObserver over scroll events** — `IntersectionObserver` is more performant than a scroll event listener. The browser natively tracks when the selector card enters/leaves the viewport, with no debouncing or throttling needed.
-- **CSS transition for smooth appear/disappear** — the header uses `opacity` and `transform: translateY` transitions rather than an abrupt `display: none` toggle. The `pointer-events: none` property prevents it from interfering with clicks when invisible.
+- **IntersectionObserver over scroll events** — `IntersectionObserver` is more performant than a scroll event listener. The browser natively tracks when the selector card enters/leaves the viewport, with no debouncing or throttling needed. The same pattern is used on both pages.
+- **CSS transition for smooth appear/disappear** — the header uses `opacity` and `transform: translateY` transitions rather than an abrupt `display: none` toggle. The `pointer-events: none` property prevents it from interfering with clicks when invisible; `.visible` adds `pointer-events: auto` for the range buttons.
+- **switchRange() helper** — a shared function syncs both original and sticky range buttons using `classList.toggle("active", ...)`. This avoids duplicating sync logic in two click handlers.
+- **Shared CSS in base.html** — the `.sticky-range-bar` styles are defined in `base.html` since both pages may use them. The user page sticky header has its own CSS but reuses the same transition pattern.
 
 ### Per-User Peak Hours
 
@@ -276,7 +279,7 @@ Both the landing page and user stats page include a Custom View block with a Tom
 - **VIZ_REGISTRY pattern** — a plain object mapping string keys to `{label, dataKey, render, type}` entries. Adding a new visualization requires one new registry entry — no template or route changes needed.
 - **No duplication with static cards** — visualizations already rendered as permanent cards on the page (e.g., Most Active Users) are excluded from the registry to avoid showing the same chart twice.
 - **Dynamic heading** — `initCustomBlock()` updates `#custom-block-heading` text on initial load and on every dropdown change; resets to "Custom View" if the selection is cleared.
-- **Separate registries per page** — the landing page uses `VIZ_REGISTRY` (10 server-wide visualizations), the user page uses `USER_VIZ_REGISTRY` (5 per-user visualizations). Each has its own localStorage key (`dashboard-custom-viz` vs `user-custom-viz`).
+- **Separate registries per page** — the landing page uses `VIZ_REGISTRY` (10 server-wide visualizations), the user page uses `USER_VIZ_REGISTRY` (4 per-user visualizations: top-words, peak-hours, emoji, profanity). Each has its own localStorage key (`dashboard-custom-viz` vs `user-custom-viz`). `activity` excluded from user registry (always static).
 - **Chart cleanup** — a module-level `customChartInstance` variable tracks the current Chart.js instance. Before re-rendering, `destroy()` is called to prevent memory leaks from orphaned chart canvases.
 - **Container type handling** — `canvas`-type renders create a `<canvas>` element, while `div`-type renders (heatmap, network) create a plain `<div>`. The heatmap gets a `.heatmap-grid` CSS class; the network does not, since it builds its own table internally.
 

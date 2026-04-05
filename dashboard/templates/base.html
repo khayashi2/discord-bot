@@ -162,6 +162,52 @@
             border-color: var(--accent);
             box-shadow: 0 0 0 2px rgba(233, 69, 96, 0.2);
         }
+        /* Sticky range bar (shared) */
+        .sticky-range-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            background: var(--bg-secondary);
+            border-bottom: 2px solid var(--accent);
+            padding: 0.4rem 2rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            opacity: 0;
+            transform: translateY(-100%);
+            transition: opacity 0.2s, transform 0.2s;
+            pointer-events: none;
+        }
+        .sticky-range-bar.visible {
+            opacity: 1;
+            transform: translateY(0);
+            pointer-events: auto;
+        }
+        .sticky-range-bar a,
+        .sticky-range-bar button {
+            padding: 0.25rem 0.7rem;
+            border-radius: 6px;
+            background: var(--bg-card);
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            cursor: pointer;
+            text-decoration: none;
+            transition: background 0.2s, color 0.2s;
+        }
+        .sticky-range-bar a:hover,
+        .sticky-range-bar button:hover {
+            color: var(--text-primary);
+            border-color: var(--accent);
+        }
+        .sticky-range-bar a.active,
+        .sticky-range-bar button.active {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
     </style>
     {% block extra_head %}{% endblock %}
 </head>

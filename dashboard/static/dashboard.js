@@ -632,4 +632,21 @@ document.addEventListener("DOMContentLoaded", () => {
 
     /* Initialize custom view block */
     initCustomBlock();
+
+    /* Sticky range bar */
+    const stickyBar = document.getElementById("sticky-range-bar");
+    const rangePicker = document.querySelector(".range-picker");
+    if (stickyBar && rangePicker) {
+        const rangeObserver = new IntersectionObserver(
+            ([entry]) => {
+                if (!entry.isIntersecting) {
+                    stickyBar.classList.add("visible");
+                } else {
+                    stickyBar.classList.remove("visible");
+                }
+            },
+            { threshold: 0 }
+        );
+        rangeObserver.observe(rangePicker);
+    }
 });
