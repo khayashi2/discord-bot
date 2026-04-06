@@ -50,6 +50,9 @@ class Settings:
     # Profanity
     _profanity_words: frozenset[str] | None = None
 
+    # Brainrot
+    _brainrot_words: frozenset[str] | None = None
+
     @property
     def profanity_file(self) -> Path:
         """Path to the profanity word list file."""
@@ -77,6 +80,34 @@ class Settings:
 
         self._profanity_words = frozenset(words)
         return self._profanity_words
+
+    @property
+    def brainrot_file(self) -> Path:
+        """Path to the brainrot word list file."""
+        return Path(__file__).parent / "config" / "brainrot.txt"
+
+    def load_brainrot_words(self) -> frozenset[str]:
+        """Load brainrot words from the config file.
+
+        Results are cached after the first call.
+        """
+        if self._brainrot_words is not None:
+            return self._brainrot_words
+
+        path = self.brainrot_file
+        if not path.exists():
+            logger.warning("Brainrot file not found: %s", path)
+            self._brainrot_words = frozenset()
+            return self._brainrot_words
+
+        words: set[str] = set()
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line and not line.startswith("#"):
+                words.add(line.lower())
+
+        self._brainrot_words = frozenset(words)
+        return self._brainrot_words
 
 
 settings = Settings()

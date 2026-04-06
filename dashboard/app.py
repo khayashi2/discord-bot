@@ -17,6 +17,8 @@ from dashboard.queries import (
     get_activity_over_time,
     get_all_members,
     get_awards,
+    get_brainrot_leaderboard,
+    get_brainrot_trend,
     get_catchphrase_lifespans,
     get_channel_activity,
     get_conversation_flow,
@@ -27,10 +29,12 @@ from dashboard.queries import (
     get_profanity_leaderboard,
     get_reaction_time_kings,
     get_sentiment_trend,
+    get_top_brainrot_terms,
     get_top_users,
     get_top_words,
     get_unique_users_over_time,
     get_user_activity_over_time,
+    get_user_brainrot_stats,
     get_user_catchphrase_lifespans,
     get_user_emoji_stats,
     get_user_message_count,
@@ -96,6 +100,9 @@ _EMPTY_CONTEXT = {
     "word_cloud": [],
     "sentiment": [],
     "catchphrases": {"phrases": [], "timelines": {}},
+    "brainrot": [],
+    "brainrot_terms": [],
+    "brainrot_trend": [],
 }
 
 
@@ -127,6 +134,9 @@ async def index(
                 "word_cloud": await get_word_cloud_data(session, after=after),
                 "sentiment": await get_sentiment_trend(session, after=after),
                 "catchphrases": await get_catchphrase_lifespans(session, after=after),
+                "brainrot": await get_brainrot_leaderboard(session, after=after),
+                "brainrot_terms": await get_top_brainrot_terms(session, after=after),
+                "brainrot_trend": await get_brainrot_trend(session, after=after),
             }
     except Exception:
         logger.exception("Failed to load dashboard data")
@@ -200,6 +210,9 @@ async def user_stats_api(
                 "catchphrases": await get_user_catchphrase_lifespans(
                     session, member_id, after=after
                 ),
+                "brainrot_stats": await get_user_brainrot_stats(
+                    session, member_id, after=after
+                ),
             }
         except Exception:
             logger.exception("Failed to load user stats for member %d", member_id)
@@ -216,6 +229,11 @@ async def user_stats_api(
                 "peak_hours": [],
                 "vocabulary": {"ttr": 0, "unique_words": 0, "total_words": 0},
                 "catchphrases": {"phrases": [], "timelines": {}},
+                "brainrot_stats": {
+                    "top_terms": [],
+                    "repeated_msg_count": 0,
+                    "total_keyword_hits": 0,
+                },
             }
 
 

@@ -1,0 +1,58 @@
+# Brainrot / meme vocabulary for the Discord Analytics Dashboard.
+# One term per line. Multi-word phrases use spaces.
+# Lines starting with '#' are comments.
+# Add or remove terms as needed for your server.
+
+# Gen Alpha / TikTok core
+skibidi
+rizz
+sigma
+gyatt
+bussin
+slay
+sus
+ohio
+based
+cope
+seethe
+mid
+ratio
+npc
+delulu
+purr
+yeet
+brainrot
+aura
+mewing
+fanum tax
+hawk tuah
+griddy
+goated
+
+# Slang & attitude
+lowkey
+highkey
+stan
+simp
+cringe
+sheesh
+bet
+cap
+no cap
+lit
+valid
+snatched
+periodt
+oof
+fr
+ong
+
+# Meme phrases
+vibe check
+living rent free
+main character
+hits different
+its giving
+understood the assignment
+big yikes
+rent free

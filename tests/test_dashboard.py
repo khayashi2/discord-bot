@@ -13,7 +13,9 @@ from dashboard.queries import (
     STOPWORDS,
     URL_PATTERN,
     WORD_PATTERN,
+    _build_brainrot_pattern,
     _clean_content,
+    _count_brainrot_in_message,
     _extract_ngrams,
     _is_filtered_word,
 )
@@ -215,6 +217,20 @@ MOCK_QUERY_RESULTS = {
             ],
         },
     },
+    "get_brainrot_leaderboard": [
+        {
+            "display_name": "Alice",
+            "avatar_url": None,
+            "keyword_count": 30,
+            "repeated_msg_count": 5,
+            "total_score": 35,
+        },
+    ],
+    "get_top_brainrot_terms": [
+        {"term": "skibidi", "count": 15},
+        {"term": "rizz", "count": 12},
+    ],
+    "get_brainrot_trend": [{"day": "2026-04-01", "count": 8}],
 }
 
 
@@ -316,6 +332,9 @@ async def test_index_handles_empty_data():
         "get_word_cloud_data": [],
         "get_sentiment_trend": [],
         "get_catchphrase_lifespans": {"phrases": [], "timelines": {}},
+        "get_brainrot_leaderboard": [],
+        "get_top_brainrot_terms": [],
+        "get_brainrot_trend": [],
     }
 
     with ExitStack() as stack:
@@ -324,6 +343,11 @@ async def test_index_handles_empty_data():
         stack.enter_context(
             patch(
                 "dashboard.app.settings.load_profanity_words", return_value=frozenset()
+            )
+        )
+        stack.enter_context(
+            patch(
+                "dashboard.app.settings.load_brainrot_words", return_value=frozenset()
             )
         )
 
@@ -442,6 +466,18 @@ async def test_user_stats_api_returns_json():
                 AsyncMock(return_value={"phrases": [], "timelines": {}}),
             )
         )
+        stack.enter_context(
+            patch(
+                "dashboard.app.get_user_brainrot_stats",
+                AsyncMock(
+                    return_value={
+                        "top_terms": [{"term": "rizz", "count": 3}],
+                        "repeated_msg_count": 1,
+                        "total_keyword_hits": 10,
+                    }
+                ),
+            )
+        )
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -456,6 +492,8 @@ async def test_user_stats_api_returns_json():
         assert data["profanity_words"][0]["word"] == "damn"
         assert data["peak_hours"][0]["hour"] == 14
         assert data["vocabulary"]["ttr"] == 0.456
+        assert data["brainrot_stats"]["top_terms"][0]["term"] == "rizz"
+        assert data["brainrot_stats"]["total_keyword_hits"] == 10
 
 
 @pytest.mark.asyncio
@@ -519,6 +557,18 @@ async def test_user_stats_api_with_range_parameter():
             patch(
                 "dashboard.app.get_user_catchphrase_lifespans",
                 AsyncMock(return_value={"phrases": [], "timelines": {}}),
+            )
+        )
+        stack.enter_context(
+            patch(
+                "dashboard.app.get_user_brainrot_stats",
+                AsyncMock(
+                    return_value={
+                        "top_terms": [],
+                        "repeated_msg_count": 0,
+                        "total_keyword_hits": 0,
+                    }
+                ),
             )
         )
 
@@ -595,6 +645,18 @@ async def test_user_stats_api_ignores_invalid_range():
                 AsyncMock(return_value={"phrases": [], "timelines": {}}),
             )
         )
+        stack.enter_context(
+            patch(
+                "dashboard.app.get_user_brainrot_stats",
+                AsyncMock(
+                    return_value={
+                        "top_terms": [],
+                        "repeated_msg_count": 0,
+                        "total_keyword_hits": 0,
+                    }
+                ),
+            )
+        )
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -625,3 +687,110 @@ async def test_user_stats_api_returns_404_for_unknown_member():
 
         assert response.status_code == 404
         assert response.json()["detail"] == "Member not found"
+
+
+# ---------------------------------------------------------------------------
+# Brainrot matching helper tests (no DB required)
+# ---------------------------------------------------------------------------
+
+
+def test_build_brainrot_pattern_matches_short_words():
+    """Brainrot pattern should match short terms like 'fr' with word boundaries."""
+    pattern = _build_brainrot_pattern(frozenset({"fr", "sus", "mid"}))
+    assert pattern is not None
+    assert pattern.search("thats fr so true")
+    assert not pattern.search("from here")
+
+
+def test_build_brainrot_pattern_case_insensitive():
+    """Brainrot pattern should match regardless of case."""
+    pattern = _build_brainrot_pattern(frozenset({"sus", "rizz"}))
+    assert pattern is not None
+    assert pattern.search("That's SUS")
+    assert pattern.search("rizz")
+    assert pattern.search("RIZZ")
+
+
+def test_build_brainrot_pattern_returns_none_for_empty():
+    """Empty word set should produce None pattern."""
+    assert _build_brainrot_pattern(frozenset()) is None
+
+
+def test_count_brainrot_single_words():
+    """Should count single brainrot words in a message."""
+    pattern = _build_brainrot_pattern(frozenset({"sus", "mid", "rizz"}))
+    total, terms = _count_brainrot_in_message("thats sus and mid", pattern, [])
+    assert terms["sus"] == 1
+    assert terms["mid"] == 1
+    assert total == 2
+
+
+def test_count_brainrot_multi_word_phrases():
+    """Should detect multi-word brainrot phrases."""
+    pattern = _build_brainrot_pattern(frozenset({"sus"}))
+    total, terms = _count_brainrot_in_message(
+        "thats no cap so true", pattern, ["no cap"]
+    )
+    assert terms["no cap"] == 1
+    assert total >= 1
+
+
+def test_count_brainrot_no_false_positives_inside_words():
+    """Short brainrot terms should not match inside longer words."""
+    pattern = _build_brainrot_pattern(frozenset({"fr", "cap"}))
+    total, terms = _count_brainrot_in_message("from the captain", pattern, [])
+    assert total == 0
+
+
+def test_count_brainrot_multi_phrase_boundary_check():
+    """Multi-word phrases should respect word boundaries."""
+    total, terms = _count_brainrot_in_message("no capital letters", None, ["no cap"])
+    assert terms.get("no cap", 0) == 0
+
+
+def test_count_brainrot_no_double_counting():
+    """Single-word 'cap' should not be counted when 'no cap' already matched."""
+    pattern = _build_brainrot_pattern(frozenset({"cap", "sus"}))
+    total, terms = _count_brainrot_in_message(
+        "thats no cap bro sus", pattern, ["no cap"]
+    )
+    assert terms["no cap"] == 1
+    assert terms.get("cap", 0) == 0  # cap is inside "no cap" span
+    assert terms["sus"] == 1
+    assert total == 2
+
+
+# ---------------------------------------------------------------------------
+# Config brainrot loading tests
+# ---------------------------------------------------------------------------
+
+
+def test_settings_loads_brainrot_words():
+    """Settings should load brainrot words from the config file."""
+    from config import Settings
+
+    s = Settings()
+    words = s.load_brainrot_words()
+    assert isinstance(words, frozenset)
+    assert "skibidi" in words
+    assert "rizz" in words
+
+
+def test_settings_caches_brainrot_words():
+    """Subsequent calls should return the same cached frozenset."""
+    from config import Settings
+
+    s = Settings()
+    first = s.load_brainrot_words()
+    second = s.load_brainrot_words()
+    assert first is second
+
+
+def test_settings_brainrot_includes_multi_word():
+    """Brainrot word list should include multi-word phrases."""
+    from config import Settings
+
+    s = Settings()
+    words = s.load_brainrot_words()
+    assert "no cap" in words
+    assert "vibe check" in words

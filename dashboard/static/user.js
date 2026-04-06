@@ -377,6 +377,50 @@ const USER_VIZ_REGISTRY = {
             return null;
         },
     },
+    "brainrot": {
+        label: "Brainrot Stats",
+        dataKey: "brainrot_stats",
+        type: "html",
+        render(containerId, data) {
+            const el = document.getElementById(containerId);
+            if (!el) return null;
+
+            const terms = data?.top_terms || [];
+            const copypasta = data?.repeated_msg_count || 0;
+            const totalHits = data?.total_keyword_hits || 0;
+
+            if (!terms.length && copypasta === 0 && totalHits === 0) {
+                el.innerHTML = '<p class="empty-state">No brainrot data.</p>';
+                return null;
+            }
+
+            let html = "";
+
+            /* Summary stat cards */
+            html += '<div style="display:flex; gap:1rem; margin-bottom:1rem;">';
+            html += `<div style="flex:1; background:var(--bg-card, #1a1a2e); border-radius:8px; padding:0.75rem; text-align:center;">
+                <div style="font-size:1.4rem; font-weight:700; color:#e94560;">${totalHits}</div>
+                <div style="font-size:0.8rem; color:var(--text-secondary, #aaa);">Keyword Hits</div>
+            </div>`;
+            html += `<div style="flex:1; background:var(--bg-card, #1a1a2e); border-radius:8px; padding:0.75rem; text-align:center;">
+                <div style="font-size:1.4rem; font-weight:700; color:#533483;">${copypasta}</div>
+                <div style="font-size:0.8rem; color:var(--text-secondary, #aaa);">Repeated Messages</div>
+            </div>`;
+            html += "</div>";
+
+            /* Term badges */
+            if (terms.length) {
+                html += '<div style="display:flex; flex-wrap:wrap; gap:0.75rem;">';
+                html += terms.map(d =>
+                    `<div class="emoji-item"><span>${escapeHtml(d.term)}</span><span class="emoji-count">&times;${d.count}</span></div>`
+                ).join("");
+                html += "</div>";
+            }
+
+            el.innerHTML = html;
+            return null;
+        },
+    },
 };
 
 function initUserCustomBlock() {

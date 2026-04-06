@@ -617,6 +617,119 @@ function toggleConvView(view) {
     }
 }
 
+/**
+ * Render a stacked horizontal bar chart for brainrot leaderboard.
+ */
+function renderBrainrotLeaderboard(canvasId, data) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas || !data.length) return null;
+
+    return new Chart(canvas, {
+        type: "bar",
+        data: {
+            labels: data.map(d => d.display_name),
+            datasets: [
+                {
+                    label: "Keyword Hits",
+                    data: data.map(d => d.keyword_count),
+                    backgroundColor: COLORS.accent,
+                    borderRadius: 4,
+                },
+                {
+                    label: "Copypasta",
+                    data: data.map(d => d.copypasta_count),
+                    backgroundColor: COLORS.accentAlt,
+                    borderRadius: 4,
+                },
+            ],
+        },
+        options: {
+            indexAxis: "y",
+            plugins: {
+                legend: { display: true, labels: { color: COLORS.text } },
+            },
+            scales: {
+                x: {
+                    stacked: true,
+                    grid: { display: false },
+                    title: { display: true, text: "Brainrot Score", color: COLORS.text },
+                },
+                y: { stacked: true, grid: { display: false } },
+            },
+        },
+    });
+}
+
+/**
+ * Render a vertical bar chart for top brainrot terms.
+ */
+function renderBrainrotTerms(canvasId, data) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas || !data.length) return null;
+
+    return new Chart(canvas, {
+        type: "bar",
+        data: {
+            labels: data.map(d => d.term),
+            datasets: [{
+                data: data.map(d => d.count),
+                backgroundColor: COLORS.bars.slice(0, data.length),
+                borderRadius: 4,
+            }],
+        },
+        options: {
+            scales: {
+                x: {
+                    grid: { display: false },
+                    ticks: { maxRotation: 45 },
+                },
+                y: {
+                    beginAtZero: true,
+                    grid: { color: COLORS.grid },
+                    title: { display: true, text: "Occurrences", color: COLORS.text },
+                },
+            },
+        },
+    });
+}
+
+/**
+ * Render a line chart for brainrot usage trend over time.
+ */
+function renderBrainrotTrend(canvasId, data) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas || !data.length) return null;
+
+    return new Chart(canvas, {
+        type: "line",
+        data: {
+            labels: data.map(d => d.day),
+            datasets: [{
+                label: "Brainrot Hits",
+                data: data.map(d => d.count),
+                borderColor: COLORS.accentAlt,
+                backgroundColor: "rgba(83, 52, 131, 0.1)",
+                fill: true,
+                tension: 0.3,
+                pointRadius: 2,
+            }],
+        },
+        options: {
+            scales: {
+                x: {
+                    grid: { display: false },
+                    ticks: { maxTicksLimit: 10 },
+                },
+                y: {
+                    beginAtZero: true,
+                    grid: { color: COLORS.grid },
+                    title: { display: true, text: "Daily Brainrot Hits", color: COLORS.text },
+                },
+            },
+        },
+    });
+}
+
 /* ─── Custom View Block (VIZ_REGISTRY) ─── */
 const VIZ_REGISTRY = {
     "word-cloud":     { label: "Word Cloud",           dataKey: "wordCloud",         render: renderWordCloud,           type: "canvas" },
@@ -630,6 +743,9 @@ const VIZ_REGISTRY = {
     "heatmap":        { label: "Activity Heatmap",     dataKey: "heatmap",           render: renderHeatmap,             type: "div" },
     "network":        { label: "Who Talks to Whom",    dataKey: "conversationFlow",  render: renderConversationNetwork, type: "div" },
     "catchphrases":   { label: "Catchphrase Lifespans", dataKey: "catchphrases",      render: renderCatchphraseLifespans, type: "div" },
+    "brainrot":       { label: "Brainrot Leaderboard",  dataKey: "brainrot",          render: renderBrainrotLeaderboard,  type: "canvas" },
+    "brainrot-terms": { label: "Top Brainrot Terms",    dataKey: "brainrotTerms",     render: renderBrainrotTerms,        type: "canvas" },
+    "brainrot-trend": { label: "Brainrot Trend",        dataKey: "brainrotTrend",     render: renderBrainrotTrend,        type: "canvas" },
 };
 
 function initCustomBlock() {
@@ -719,6 +835,9 @@ document.addEventListener("DOMContentLoaded", () => {
         sentiment:        JSON.parse(dataEl.dataset.sentiment),
         conversationFlow: JSON.parse(dataEl.dataset.conversationFlow),
         catchphrases:     JSON.parse(dataEl.dataset.catchphrases),
+        brainrot:         JSON.parse(dataEl.dataset.brainrot),
+        brainrotTerms:    JSON.parse(dataEl.dataset.brainrotTerms),
+        brainrotTrend:    JSON.parse(dataEl.dataset.brainrotTrend),
     };
 
     /* Render static charts */
