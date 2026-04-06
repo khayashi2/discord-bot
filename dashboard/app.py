@@ -17,6 +17,7 @@ from dashboard.queries import (
     get_activity_over_time,
     get_all_members,
     get_awards,
+    get_catchphrase_lifespans,
     get_channel_activity,
     get_conversation_flow,
     get_digest,
@@ -30,6 +31,7 @@ from dashboard.queries import (
     get_top_words,
     get_unique_users_over_time,
     get_user_activity_over_time,
+    get_user_catchphrase_lifespans,
     get_user_emoji_stats,
     get_user_message_count,
     get_user_peak_hours,
@@ -93,6 +95,7 @@ _EMPTY_CONTEXT = {
     "growth": [],
     "word_cloud": [],
     "sentiment": [],
+    "catchphrases": {"phrases": [], "timelines": {}},
 }
 
 
@@ -123,6 +126,7 @@ async def index(
                 "growth": await get_unique_users_over_time(session, after=after),
                 "word_cloud": await get_word_cloud_data(session, after=after),
                 "sentiment": await get_sentiment_trend(session, after=after),
+                "catchphrases": await get_catchphrase_lifespans(session, after=after),
             }
     except Exception:
         logger.exception("Failed to load dashboard data")
@@ -193,6 +197,9 @@ async def user_stats_api(
                 "vocabulary": await get_user_vocabulary_diversity(
                     session, member_id, after=after
                 ),
+                "catchphrases": await get_user_catchphrase_lifespans(
+                    session, member_id, after=after
+                ),
             }
         except Exception:
             logger.exception("Failed to load user stats for member %d", member_id)
@@ -208,6 +215,7 @@ async def user_stats_api(
                 },
                 "peak_hours": [],
                 "vocabulary": {"ttr": 0, "unique_words": 0, "total_words": 0},
+                "catchphrases": {"phrases": [], "timelines": {}},
             }
 
 

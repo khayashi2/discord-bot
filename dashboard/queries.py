@@ -69,6 +69,28 @@ def _is_filtered_word(word: str) -> bool:
     return word in STOPWORDS or word in FILTERED_WORDS
 
 
+def _extract_ngrams(text: str, min_n: int = 2, max_n: int = 4) -> list[str]:
+    """Extract n-grams (2-4 words) from cleaned text.
+
+    Filters out n-grams where more than half the words are stopwords,
+    keeping meaningful phrases like "skill issue" or "no cap" while
+    discarding noise like "and then". Note that WORD_PATTERN requires
+    3+ chars, so short stopwords like "of" are never extracted.
+    """
+    cleaned = _clean_content(text.lower())
+    words = WORD_PATTERN.findall(cleaned)
+    words = [w for w in words if w not in FILTERED_WORDS]
+
+    ngrams: list[str] = []
+    for n in range(min_n, max_n + 1):
+        for i in range(len(words) - n + 1):
+            gram = words[i : i + n]
+            if sum(1 for w in gram if w in STOPWORDS) / n > 0.5:
+                continue
+            ngrams.append(" ".join(gram))
+    return ngrams
+
+
 def cutoff_from_range(range_key: str | None) -> datetime | None:
     """Convert a range key like '7d', '30d', '90d' to a cutoff datetime."""
     if not range_key:
@@ -1237,3 +1259,187 @@ async def get_sentiment_trend(
         }
         for i in range(range_days + 1)
     ]
+
+
+# ---------------------------------------------------------------------------
+# Catchphrase / meme lifespans
+# ---------------------------------------------------------------------------
+
+
+def _accumulate_phrase_stats(
+    rows: list,
+) -> tuple[
+    Counter,
+    dict[str, set[int]],
+    dict[str, Counter],
+    dict[str, datetime],
+    dict[str, datetime],
+]:
+    """Extract n-gram stats from message rows.
+
+    Returns (phrase_counts, phrase_users, phrase_weekly, phrase_first,
+    phrase_last) accumulators ready for ``_build_catchphrase_result``.
+    """
+    phrase_counts: Counter = Counter()
+    phrase_users: dict[str, set[int]] = {}
+    phrase_weekly: dict[str, Counter] = {}
+    phrase_first: dict[str, datetime] = {}
+    phrase_last: dict[str, datetime] = {}
+
+    for row in rows:
+        ngrams = _extract_ngrams(row.content)
+        week_monday = row.created_at.date() - timedelta(days=row.created_at.weekday())
+        week_key = week_monday.isoformat()
+
+        for ng in ngrams:
+            phrase_counts[ng] += 1
+            phrase_users.setdefault(ng, set()).add(row.author_id)
+            phrase_weekly.setdefault(ng, Counter())[week_key] += 1
+
+            if ng not in phrase_first or row.created_at < phrase_first[ng]:
+                phrase_first[ng] = row.created_at
+            if ng not in phrase_last or row.created_at > phrase_last[ng]:
+                phrase_last[ng] = row.created_at
+
+    return phrase_counts, phrase_users, phrase_weekly, phrase_first, phrase_last
+
+
+def _prune_phrase_stats(
+    phrase_counts: Counter,
+    phrase_users: dict[str, set[int]],
+    phrase_weekly: dict[str, Counter],
+    phrase_first: dict[str, datetime],
+    phrase_last: dict[str, datetime],
+    *,
+    min_uses: int,
+    min_users: int,
+) -> None:
+    """Discard phrases that can never qualify, freeing memory."""
+    to_remove = [
+        p
+        for p in phrase_counts
+        if phrase_counts[p] < min_uses or len(phrase_users.get(p, set())) < min_users
+    ]
+    for p in to_remove:
+        del phrase_counts[p]
+        phrase_users.pop(p, None)
+        phrase_weekly.pop(p, None)
+        phrase_first.pop(p, None)
+        phrase_last.pop(p, None)
+
+
+def _build_catchphrase_result(
+    phrase_counts: Counter,
+    phrase_users: dict[str, set[int]],
+    phrase_weekly: dict[str, Counter],
+    phrase_first: dict[str, datetime],
+    phrase_last: dict[str, datetime],
+    *,
+    min_uses: int,
+    min_users: int,
+    limit: int = 20,
+    include_unique_users: bool = True,
+) -> dict:
+    """Shared logic for building the catchphrase lifespan response."""
+    now = datetime.now(UTC)
+    current_week = now.date() - timedelta(days=now.weekday())
+    prev_week = current_week - timedelta(weeks=1)
+
+    qualifying = [
+        p
+        for p, count in phrase_counts.items()
+        if count >= min_uses and len(phrase_users.get(p, set())) >= min_users
+    ]
+    qualifying.sort(key=lambda p: phrase_counts[p], reverse=True)
+    qualifying = qualifying[:limit]
+
+    phrases: list[dict] = []
+    timelines: dict[str, list[dict]] = {}
+
+    for phrase in qualifying:
+        weekly = phrase_weekly[phrase]
+        sorted_weeks = sorted(weekly.keys())
+        peak_week = max(sorted_weeks, key=lambda w: weekly[w])
+        peak_count = weekly[peak_week]
+
+        cur_key = current_week.isoformat()
+        prev_key = prev_week.isoformat()
+        cur_count = weekly.get(cur_key, 0)
+        prev_count = weekly.get(prev_key, 0)
+
+        if cur_count == 0:
+            status = "dead"
+        elif cur_count >= prev_count:
+            # Includes flat week-over-week; "rising" means not declining
+            status = "rising"
+        else:
+            status = "peaked"
+
+        entry: dict = {
+            "phrase": phrase,
+            "total_uses": phrase_counts[phrase],
+            "first_seen": phrase_first[phrase].strftime("%Y-%m-%d"),
+            "last_seen": phrase_last[phrase].strftime("%Y-%m-%d"),
+            "peak_week": peak_week,
+            "peak_count": peak_count,
+            "status": status,
+        }
+        if include_unique_users:
+            entry["unique_users"] = len(phrase_users[phrase])
+        phrases.append(entry)
+
+        timelines[phrase] = [{"week": w, "count": weekly[w]} for w in sorted_weeks]
+
+    return {"phrases": phrases, "timelines": timelines}
+
+
+async def get_catchphrase_lifespans(
+    session: AsyncSession, after: datetime | None = None
+) -> dict:
+    """Detect multi-word catchphrases and track their rise, peak, and decline.
+
+    Extracts 2-4 word n-grams from recent messages and groups usage by ISO
+    week. Phrases need at least 5 total uses from 2+ different users to
+    qualify as a catchphrase. Returns summary cards and per-phrase weekly
+    timelines.
+
+    N-gram extraction over 15,000 messages is heavier than single-word
+    counting. Consider caching or materialized views at high volume.
+    """
+    stmt = select(Message.content, Message.created_at, Message.author_id).where(
+        Message.content.isnot(None)
+    )
+    if after:
+        stmt = stmt.where(Message.created_at >= after)
+    stmt = stmt.order_by(Message.created_at.desc()).limit(15_000)
+    rows = (await session.execute(stmt)).all()
+
+    stats = _accumulate_phrase_stats(rows)
+    _prune_phrase_stats(*stats, min_uses=5, min_users=2)
+
+    return _build_catchphrase_result(*stats, min_uses=5, min_users=2)
+
+
+async def get_user_catchphrase_lifespans(
+    session: AsyncSession, member_id: int, after: datetime | None = None
+) -> dict:
+    """Per-user version of catchphrase lifespan detection.
+
+    Same algorithm as the server-wide version but filtered to a single
+    user's messages. Lower threshold (3 uses) since individual output
+    is smaller. Scans up to 5,000 messages.
+    """
+    stmt = select(Message.content, Message.created_at, Message.author_id).where(
+        Message.content.isnot(None), Message.author_id == member_id
+    )
+    if after:
+        stmt = stmt.where(Message.created_at >= after)
+    stmt = stmt.order_by(Message.created_at.desc()).limit(5_000)
+    rows = (await session.execute(stmt)).all()
+
+    stats = _accumulate_phrase_stats(rows)
+    _prune_phrase_stats(*stats, min_uses=3, min_users=1)
+
+    return _build_catchphrase_result(
+        *stats, min_uses=3, min_users=1, include_unique_users=False
+    )

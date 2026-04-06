@@ -503,6 +503,99 @@ function renderConversationNetwork(containerId, data) {
     return null;
 }
 
+/* ─── Catchphrase / meme lifespans ─── */
+
+function escapeHtml(s) {
+    const d = document.createElement("div");
+    d.textContent = s;
+    return d.innerHTML;
+}
+
+function renderCatchphraseLifespans(containerId, data) {
+    const container = document.getElementById(containerId);
+    if (!container) return null;
+
+    /* Destroy any lingering internal chart from a previous render */
+    if (container._catchphraseChart) {
+        container._catchphraseChart.destroy();
+        container._catchphraseChart = null;
+    }
+
+    const phrases = data.phrases || [];
+    const timelines = data.timelines || {};
+
+    if (!phrases.length) {
+        container.innerHTML = '<p class="empty-state">No catchphrases detected yet.</p>';
+        return null;
+    }
+
+    const statusColors = { rising: "#90be6d", peaked: "#f9c74f", dead: "#666" };
+
+    /* Card grid */
+    const grid = document.createElement("div");
+    grid.style.cssText = "display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:0.75rem; margin-bottom:1rem;";
+
+    /* Timeline chart area (hidden until a card is clicked) */
+    const chartWrapper = document.createElement("div");
+    chartWrapper.style.display = "none";
+    const canvas = document.createElement("canvas");
+    canvas.id = containerId + "-timeline";
+    chartWrapper.appendChild(canvas);
+
+    for (const p of phrases) {
+        const card = document.createElement("div");
+        card.style.cssText = "background:var(--bg-card, #1a1a2e); border-radius:8px; padding:0.75rem; cursor:pointer; border:2px solid transparent; transition:border-color 0.2s;";
+
+        const usersText = p.unique_users != null ? `${p.total_uses} uses by ${p.unique_users} users` : `${p.total_uses} uses`;
+        const safeStatus = escapeHtml(p.status);
+        card.innerHTML =
+            `<div style="font-weight:700; font-size:0.95rem; margin-bottom:0.3rem;">\u201c${escapeHtml(p.phrase)}\u201d</div>` +
+            `<span style="display:inline-block; padding:0.15rem 0.5rem; border-radius:4px; font-size:0.7rem; font-weight:600; color:#fff; background:${statusColors[p.status] || "#666"};">${safeStatus}</span>` +
+            `<div style="font-size:0.8rem; color:var(--text-secondary, #aaa); margin-top:0.4rem;">${usersText}</div>` +
+            `<div style="font-size:0.75rem; color:var(--text-secondary, #aaa);">${p.first_seen} \u2192 ${p.last_seen}</div>`;
+
+        card.addEventListener("click", () => {
+            /* Highlight selected card */
+            grid.querySelectorAll(":scope > div").forEach(c => { c.style.borderColor = "transparent"; });
+            card.style.borderColor = COLORS.accent;
+
+            /* Render timeline chart */
+            const timeline = timelines[p.phrase] || [];
+            chartWrapper.style.display = "block";
+
+            if (container._catchphraseChart) container._catchphraseChart.destroy();
+            container._catchphraseChart = new Chart(canvas, {
+                type: "line",
+                data: {
+                    labels: timeline.map(t => t.week),
+                    datasets: [{
+                        label: `\u201c${p.phrase}\u201d`,
+                        data: timeline.map(t => t.count),
+                        borderColor: COLORS.accent,
+                        backgroundColor: "rgba(233, 69, 96, 0.1)",
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 3,
+                    }],
+                },
+                options: {
+                    plugins: { legend: { display: true, labels: { color: COLORS.text } } },
+                    scales: {
+                        x: { grid: { display: false }, title: { display: true, text: "Week", color: COLORS.text } },
+                        y: { beginAtZero: true, grid: { color: COLORS.grid }, title: { display: true, text: "Uses", color: COLORS.text } },
+                    },
+                },
+            });
+        });
+
+        grid.appendChild(card);
+    }
+
+    container.appendChild(grid);
+    container.appendChild(chartWrapper);
+    return null;
+}
+
 /* ─── Conversation flow view toggle ─── */
 function toggleConvView(view) {
     const networkEl = document.getElementById("networkGrid");
@@ -536,6 +629,7 @@ const VIZ_REGISTRY = {
     "reaction-time":  { label: "Reaction Time Kings",  dataKey: "reactionTime",      render: renderReactionTime,        type: "canvas" },
     "heatmap":        { label: "Activity Heatmap",     dataKey: "heatmap",           render: renderHeatmap,             type: "div" },
     "network":        { label: "Who Talks to Whom",    dataKey: "conversationFlow",  render: renderConversationNetwork, type: "div" },
+    "catchphrases":   { label: "Catchphrase Lifespans", dataKey: "catchphrases",      render: renderCatchphraseLifespans, type: "div" },
 };
 
 function initCustomBlock() {
@@ -624,6 +718,7 @@ document.addEventListener("DOMContentLoaded", () => {
         wordCloud:        JSON.parse(dataEl.dataset.wordCloud),
         sentiment:        JSON.parse(dataEl.dataset.sentiment),
         conversationFlow: JSON.parse(dataEl.dataset.conversationFlow),
+        catchphrases:     JSON.parse(dataEl.dataset.catchphrases),
     };
 
     /* Render static charts */

@@ -15,10 +15,10 @@ A Discord bot that tracks server activity and displays fun analytics on a web da
 - **Live Message Tracking** — the bot listens to every message in your server and stores it in PostgreSQL (content, author, channel, emoji count, attachments, and more)
 - **Upsert Strategy** — channels and members are automatically upserted so metadata stays fresh without duplicates
 - **Historical Backfill** — a one-off script ingests all past messages from every text channel, with batched commits and per-channel error handling
-- **Web Dashboard** — a FastAPI-powered analytics dashboard with a streamlined landing page: daily/weekly digest, overview stats, channel activity, activity trend, most active users, a customizable visualization block, and awards & superlatives. All other visualizations (word cloud, top words, profanity, emoji, sentiment, heatmap, vocabulary diversity, conversation flow, peak hours, reaction time kings, server growth) are accessible via the Custom View dropdown
+- **Web Dashboard** — a FastAPI-powered analytics dashboard with a streamlined landing page: daily/weekly digest, overview stats, channel activity, activity trend, most active users, a customizable visualization block, and awards & superlatives. All other visualizations (word cloud, top words, profanity, emoji, sentiment, heatmap, vocabulary diversity, conversation flow, peak hours, reaction time kings, server growth, catchphrases) are accessible via the Custom View dropdown
 - **Customizable Dashboard Block** — a dropdown (Tom Select) on both the landing page and user stats page where end-users can choose which visualization to display; the card heading dynamically shows the selected visualization name (e.g., "Word Cloud" instead of "Custom View"); selection persists via localStorage
 - **Time-Filtered Analytics** — dashboard supports 7-day, 30-day, and 90-day time range filters with a sticky range bar that follows you as you scroll, so you can change the filter from anywhere on the page
-- **User Stats Page** — a dedicated per-user analytics page with a streamlined layout mirroring the landing page: stat cards, activity chart, and a Custom View dropdown for all other visualizations (top words, emoji, profanity, peak hours). Includes a sticky header showing the selected user and range buttons as you scroll
+- **User Stats Page** — a dedicated per-user analytics page with a streamlined layout mirroring the landing page: stat cards, activity chart, and a Custom View dropdown for all other visualizations (top words, emoji, profanity, peak hours, catchphrases). Includes a sticky header showing the selected user and range buttons as you scroll
 - **Profanity Leaderboard** — ranks users by profanity usage using a configurable word list (`config/profanity.txt`), with a collapsible reference showing all tracked words and per-user profanity breakdowns on the user stats page
 - **Activity Heatmap** — a day-of-week × hour-of-day grid showing when the server is most active, with color intensity based on message volume (hours in Pacific Time, auto-adjusts for PST/PDT)
 - **Awards & Superlatives** — fun badges highlighting server members: Night Owl, Early Bird, Emoji Monarch, Novelist, Chatterbox, Editor, and Attachment Pro
@@ -28,31 +28,10 @@ A Discord bot that tracks server activity and displays fun analytics on a web da
 - **Reaction Time Kings** — ranks the fastest responders by average reply time, using the same consecutive-message pairing logic as conversation flow (minimum 3 responses to qualify)
 - **Channel Activity List** — a server-rendered table showing all indexed channels with message count and last active date
 - **Daily/Weekly Digest** — "today vs yesterday" and "this week vs last week" cards with percentage deltas for messages and active users
-- **Server Growth Timeline** — a line chart showing unique active users per day over time (Pacific Time)
+- **Server Growth Timeline** — a line chart showing unique active users per day over time
 - **Word Cloud** — a visual word cloud (via wordcloud2.js) showing the most frequently used words, with size proportional to frequency
 - **Message Sentiment Trend** — a dual-line chart tracking daily positive and negative keyword hits, with a disclaimer that it's keyword-based, not AI-powered
-
-## Plan
-
-### Phase 1 — Project Scaffold & CI/CD (do this first)
-
-Set up the repo structure, .gitignore, requirements.txt, .env.example, Dockerfile, docker-compose.yml, and a GitHub Actions workflow that runs linting and tests on PR. This gives you the skeleton everything else hangs on, and it matches your project instructions about branching and conventional commits.
-
-### Phase 2 — Data Model & Database
-
-Design and create your tables (users, messages, channels, etc.) with migrations (Alembic). This forces you to think about what data you need before writing any bot code.
-
-### Phase 3 — Historical Backfill Script
-
-Write the script that connects to Discord, iterates through channels, and ingests historical messages into the database. This is where you get your dataset.
-
-### Phase 4 — Live Bot Listener
-
-Set up the discord.py bot that listens for new messages and inserts them in real time. This is a thin layer on top of what you already built.
-
-### Phase 5 — Dashboard (in progress)
-
-Build the API endpoints and frontend to visualize the trends. The dashboard is live with a streamlined landing page (digest, overview stats, channel activity, activity chart, most active users, custom view dropdown, awards) and all other visualizations accessible via the Custom View block. Includes time-range filtering (7d/30d/90d) and a dedicated per-user stats page with its own custom view block.
+- **Catchphrase Lifespans** — automatically detects multi-word phrases (2-4 word n-grams) that spike in usage across multiple users, tracks their lifecycle (rising, peaked, or dead), and shows weekly usage timelines. Available on both the landing page and user stats page via Custom View
 
 ## Getting Started
 
@@ -146,7 +125,7 @@ This section documents the "why" behind key decisions — useful context if you'
 
 **Why:** Storing raw content keeps your options open. You can always derive new analytics later (e.g., sentiment analysis, slang detection) without re-fetching from Discord's API — which has strict rate limits and only retains messages in accessible channels.
 
-**Consider:** This means the database will grow faster and stores potentially sensitive text. In a production bot you'd want to think about data retention policies and user privacy. For a portfolio project, this trade-off is worth the flexibility.
+**Consider:** This means the database will grow faster and stores potentially sensitive text. In a production bot you'd want to think about data retention policies and user privacy. For a portfolio project, this trade-off is worth the flexibility. All timestamps are stored in UTC.
 
 ### Upserts for Channels and Members
 
@@ -202,7 +181,7 @@ This section documents the "why" behind key decisions — useful context if you'
 
 **Why:** The main dashboard shows server-wide trends, but users want to see their own stats. A JSON API + client-side rendering avoids a full page reload on every user switch and lets you reuse the same Chart.js patterns from the main dashboard.
 
-**Consider:** This is the project's first client-side data fetching pattern — the main dashboard uses server-rendered templates with `data-*` attributes. The API approach is more flexible (you could build a mobile client or embed stats in a Discord command) but introduces a second rendering path to maintain.
+**Consider:** This is the project's first client-side data fetching pattern — the main dashboard uses server-rendered templates with `data-*` attributes. The API approach is more flexible (you could build a mobile client or embed stats in a Discord command) but introduces a second rendering path to maintain. Per-user queries mirror the server-wide versions (peak hours, vocabulary diversity, profanity words, catchphrases) but filter by `member_id` — separate functions keep each one focused and testable. The vocabulary panel uses stat cards (not a chart) since it's a single user's data. Time filtering (`7d`/`30d`/`90d`) uses `<button>` elements with JS click handlers (not page reloads), and the selected range persists when switching between users. A sticky header with `IntersectionObserver` shows the selected user and range buttons when scrolling.
 
 ### Profanity Leaderboard
 
@@ -228,21 +207,13 @@ This section documents the "why" behind key decisions — useful context if you'
 
 **Consider:** A minimum of 3 responses is required to qualify, preventing someone with one fast reply from topping the list. The metric is approximate — it pairs *consecutive* messages, not explicit Discord replies, so busy channels with interleaved conversations can skew results. The scan is bounded to 10,000 recent messages for performance.
 
-### Removing Message Lengths and Most Active Channels
-
-**What:** The Message Lengths (doughnut chart) and Most Active Channels (bar chart) panels were removed from both the landing page and user stats page.
-
-**Why:** These panels provided less engagement value compared to the newer analytics (heatmap, awards, vocabulary diversity, conversation flow). Message length distribution is a relatively static metric that doesn't change much over time, and channel activity overlaps with information already visible in the overview stats. Removing them keeps the dashboard focused on the most interesting insights.
-
-**Consider:** The query functions (`get_message_length_stats`, `get_top_channels`, etc.) were intentionally left in `queries.py` as unused code — they could be re-enabled or repurposed (e.g., for a CSV export feature) without reimplementing the SQL logic.
-
 ### Activity Heatmap
 
 **What:** A CSS grid visualization showing message volume by day-of-week and hour-of-day, with color intensity proportional to activity.
 
 **Why:** Heatmaps are one of the best ways to spot temporal patterns at a glance — you can immediately see if your server is more active on weekends, or if there's a cluster of late-night chatters. The grid is rendered with pure DOM manipulation (no Chart.js) since a 7×24 cell grid maps more naturally to HTML/CSS than to a chart library.
 
-**Consider:** All timestamps are stored in UTC but displayed in Pacific Time using PostgreSQL's `AT TIME ZONE 'US/Pacific'`, which automatically handles PST/PDT transitions. The timezone string is currently hardcoded in queries — a future improvement could make it configurable via `config.py` if the bot is deployed for servers in other timezones.
+**Consider:** Timestamps are stored in UTC but displayed in Pacific Time using PostgreSQL's `AT TIME ZONE 'US/Pacific'`, which automatically handles PST/PDT transitions per-row. The same pattern is used for peak hours and Night Owl/Early Bird awards. The timezone string `"US/Pacific"` is currently hardcoded in queries — a future improvement could make it configurable via `config.py` for servers in other timezones.
 
 ### Awards & Superlatives
 
@@ -268,38 +239,6 @@ This section documents the "why" behind key decisions — useful context if you'
 
 **Consider:** This is a heuristic, not true threading. Discord doesn't expose reply relationships in older messages (only explicit replies via the reply feature). Consecutive-message pairing is a reasonable approximation but can misattribute replies in busy channels. The query processes 10,000 recent messages in Python, ordered chronologically by channel.
 
-### User Page Time Filtering
-
-**What:** The user stats page now supports the same 7-day, 30-day, 90-day, and all-time filters as the main dashboard. The range is passed as a query parameter to the JSON API (`/api/user/{member_id}?range=30d`), and all user query functions filter accordingly.
-
-**Why:** All-time user stats miss recent trends — a user might have been very active last week but quiet before that. Adding time filtering reuses the same `cutoff_from_range()` and `after` parameter pattern from the main dashboard, keeping the codebase consistent.
-
-**Consider:** Unlike the main dashboard (which uses `<a>` tags and full page reloads), the user page uses `<button>` elements with JavaScript click handlers since user selection already works client-side. The selected range persists when switching between users — it's treated as a user preference about the time window, not tied to a specific member.
-
-### Sticky User Header & Range Bar
-
-**What:** A fixed header that appears at the top of the user page when you scroll past the selector, showing the selected user's display name and time-range buttons (7d/30d/90d/All). The landing page has a separate sticky range bar that appears when the original filter scrolls out of view.
-
-**Why:** Long dashboard pages mean losing context — whose stats am I viewing? What time range is selected? The sticky header solves both on the user page. The landing page's sticky range bar lets you change filters without scrolling back to the top.
-
-**Consider:** Both use `IntersectionObserver` (not scroll listeners) for performance. The user page uses a `switchRange()` helper to keep original and sticky range buttons in sync — clicking either updates both sets and reloads data. The landing page's sticky bar uses simple `<a>` tags (same as the original filter) since range changes trigger a page reload anyway.
-
-### Pacific Time Conversion
-
-**What:** The activity heatmap, peak hours chart, and Night Owl/Early Bird awards all display hours in Pacific Time instead of UTC, using PostgreSQL's `timezone('US/Pacific', created_at)` function.
-
-**Why:** The server is US-based, so UTC hours were confusing — peak activity appeared shifted by 7-8 hours from what users expected. PostgreSQL's `AT TIME ZONE` handles PST/PDT transitions automatically based on each row's timestamp, which is more correct than a fixed UTC offset.
-
-**Consider:** The timezone string `"US/Pacific"` is hardcoded in three query functions. For a multi-timezone deployment, you'd want to extract this to `config.py` as a `DASHBOARD_TIMEZONE` setting. The conversion happens server-side in SQL, not client-side in JavaScript, because the `EXTRACT(hour)` needs to operate on the converted timestamp.
-
-### Per-User Peak Hours & Vocabulary Diversity
-
-**What:** Two new panels on the user stats page: a per-user peak hours bar chart and a vocabulary diversity stat card showing TTR score, unique words, and total words.
-
-**Why:** The main dashboard shows server-wide peak hours and vocabulary diversity, but users want to see their own patterns. "When am I most active?" and "How diverse is my vocabulary?" are natural follow-ups to the per-user stats already shown. Both panels include explanatory text so users understand what TTR means.
-
-**Consider:** The vocabulary diversity panel uses stat cards (not a chart) since it's a single user's data — a bar chart would only have one bar. The TTR description ("unique words / total words, higher = more diverse") appears on both the main dashboard and user page for consistency. The server returns `total_words: 0` when the sample is too small (< 10 words), and the client hides the panel in that case.
-
 ### Channel Activity List
 
 **What:** A server-rendered table showing every indexed channel with its message count and last active date.
@@ -318,11 +257,11 @@ This section documents the "why" behind key decisions — useful context if you'
 
 ### Server Growth Timeline
 
-**What:** A line chart showing unique active users per day, using Pacific Time for day boundaries.
+**What:** A line chart showing unique active users per day, using UTC day boundaries (consistent with the activity-over-time chart).
 
 **Why:** Message volume alone doesn't tell you if the server is growing. Unique daily users reveals whether the community is expanding, stable, or declining. This complements the activity-over-time chart (which shows message count).
 
-**Consider:** Uses `func.timezone("US/Pacific", ...)` for day truncation, consistent with the heatmap and peak hours. Without this, a message sent at 10 PM Pacific would be bucketed into the next UTC day, producing misleading results for a US-based server.
+**Consider:** Daily aggregation uses UTC (not Pacific Time) because the zero-day fill range is also UTC-based — mixing timezones would cause day-key mismatches near midnight. Pacific Time is reserved for hour-of-day analytics (heatmap, peak hours) where the timezone directly affects the displayed hour.
 
 ### Word Cloud
 
@@ -355,6 +294,14 @@ This section documents the "why" behind key decisions — useful context if you'
 **Why:** Both pages were simplified to show only core stats as static cards (landing: digest, overview, channel activity, activity chart, most active users, awards; user: stat cards, activity chart). All other visualizations are accessible through the Custom View dropdown. This keeps pages scannable while still giving users access to every metric.
 
 **Consider:** The implementation uses a `VIZ_REGISTRY` pattern — a plain object mapping keys to `{label, dataKey, render, type}`. Adding a new visualization to the dropdown only requires one new registry entry. Visualizations that are already displayed as static cards on the page (like Most Active Users) are excluded from the registry to avoid duplication. Chart.js instances are tracked and properly destroyed before re-rendering to prevent memory leaks. The `div`-type renders (heatmap, network) need different container setup than `canvas`-type renders.
+
+### Catchphrase Lifespans
+
+**What:** Detects multi-word catchphrases (2-4 word n-grams) and tracks their weekly usage lifecycle — rising, peaked, or dead. Available on both the landing page and user stats page via Custom View.
+
+**Why:** Single-word analytics miss the phrases that actually define a community's culture ("skill issue", "out of pocket"). Tracking rise and decline over time reveals how memes and slang spread through the server, adding a social dimension beyond raw word counts.
+
+**Consider:** N-gram extraction is significantly heavier than single-word counting — a 20-word message produces ~54 n-grams. To manage memory, `_prune_phrase_stats()` discards all phrases below the qualification threshold after accumulation. Server-wide catchphrases require 5+ uses from 2+ unique users (preventing one person's repetition from appearing as a server trend). Per-user thresholds are lower (3+ uses). Shared helpers (`_accumulate_phrase_stats`, `_prune_phrase_stats`, `_build_catchphrase_result`) keep the two query functions thin. Note that `WORD_PATTERN` requires 3+ characters, so short words like "of" are never extracted — "out of pocket" becomes the 2-gram "out pocket". The weekly timeline chart is rendered on card click, with the Chart.js instance stored on the container element for proper cleanup when switching visualizations.
 
 ### Async Database Access
 
