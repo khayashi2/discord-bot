@@ -14,6 +14,7 @@ from dashboard.queries import (
     URL_PATTERN,
     WORD_PATTERN,
     _clean_content,
+    _extract_ngrams,
     _is_filtered_word,
 )
 
@@ -87,6 +88,37 @@ def test_filtered_words_contains_expected():
     assert "gif" in FILTERED_WORDS
     assert "pdf" in FILTERED_WORDS
     assert "org" in FILTERED_WORDS
+
+
+def test_extract_ngrams_produces_phrases():
+    """_extract_ngrams should produce 2-4 word phrases from text."""
+    ngrams = _extract_ngrams("skill issue detected right now")
+    assert "skill issue" in ngrams
+    assert "issue detected" in ngrams
+    assert "skill issue detected" in ngrams
+
+
+def test_extract_ngrams_filters_stopword_heavy():
+    """N-grams where >50% of words are stopwords should be excluded."""
+    ngrams = _extract_ngrams("the and but not")
+    # All words are stopwords, so all n-grams are >50% stopwords
+    assert len(ngrams) == 0
+
+
+def test_extract_ngrams_keeps_partial_stopword_phrases():
+    """N-grams with some stopwords (<=50%) should be kept."""
+    ngrams = _extract_ngrams("out of pocket behavior")
+    # "of" is 2 chars → excluded by WORD_PATTERN, so words are [out, pocket, behavior].
+    # "out" is a stopword (1/2 = 0.5), which is NOT > 0.5, so the 2-gram passes.
+    assert "out pocket" in ngrams
+    assert "pocket behavior" in ngrams
+
+
+def test_extract_ngrams_filters_domain_words():
+    """FILTERED_WORDS should be excluded before n-gram generation."""
+    ngrams = _extract_ngrams("check this jpg file")
+    # "jpg" should be filtered out, so "this jpg" should not appear
+    assert all("jpg" not in ng for ng in ngrams)
 
 
 # ---------------------------------------------------------------------------
@@ -163,6 +195,26 @@ MOCK_QUERY_RESULTS = {
     "get_unique_users_over_time": [{"day": "2026-04-01", "unique_users": 8}],
     "get_word_cloud_data": [{"word": "discord", "count": 50}],
     "get_sentiment_trend": [{"day": "2026-04-01", "positive": 10, "negative": 3}],
+    "get_catchphrase_lifespans": {
+        "phrases": [
+            {
+                "phrase": "skill issue",
+                "total_uses": 25,
+                "unique_users": 4,
+                "first_seen": "2026-03-01",
+                "last_seen": "2026-04-03",
+                "peak_week": "2026-03-16",
+                "peak_count": 8,
+                "status": "peaked",
+            },
+        ],
+        "timelines": {
+            "skill issue": [
+                {"week": "2026-03-01", "count": 3},
+                {"week": "2026-03-08", "count": 8},
+            ],
+        },
+    },
 }
 
 
@@ -263,6 +315,7 @@ async def test_index_handles_empty_data():
         "get_unique_users_over_time": [],
         "get_word_cloud_data": [],
         "get_sentiment_trend": [],
+        "get_catchphrase_lifespans": {"phrases": [], "timelines": {}},
     }
 
     with ExitStack() as stack:
@@ -383,6 +436,12 @@ async def test_user_stats_api_returns_json():
                 ),
             )
         )
+        stack.enter_context(
+            patch(
+                "dashboard.app.get_user_catchphrase_lifespans",
+                AsyncMock(return_value={"phrases": [], "timelines": {}}),
+            )
+        )
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -456,6 +515,12 @@ async def test_user_stats_api_with_range_parameter():
                 AsyncMock(return_value={"ttr": 0, "unique_words": 0, "total_words": 0}),
             )
         )
+        stack.enter_context(
+            patch(
+                "dashboard.app.get_user_catchphrase_lifespans",
+                AsyncMock(return_value={"phrases": [], "timelines": {}}),
+            )
+        )
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -522,6 +587,12 @@ async def test_user_stats_api_ignores_invalid_range():
             patch(
                 "dashboard.app.get_user_vocabulary_diversity",
                 AsyncMock(return_value={"ttr": 0, "unique_words": 0, "total_words": 0}),
+            )
+        )
+        stack.enter_context(
+            patch(
+                "dashboard.app.get_user_catchphrase_lifespans",
+                AsyncMock(return_value={"phrases": [], "timelines": {}}),
             )
         )
 

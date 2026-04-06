@@ -39,35 +39,19 @@ A Discord bot that tracks server activity and displays fun analytics (top words,
 
 ## Key Design Decisions
 
-- Storing full message content (not just metadata) to enable flexible analytics
-- Bot, dashboard, and backfill script are separate entry points sharing the same DB via `db/operations.py`
-- Shared DB operations (`db/operations.py`) — upsert/insert logic extracted so both listener and backfill use identical persistence code
-- PostgreSQL via Docker Compose for all environments
-- Async database access via asyncpg + SQLAlchemy async sessions
-- Dashboard analytics split into `dashboard/queries.py` — each query function returns plain dicts so the route handler stays thin
-- Time-filtered queries — every main query accepts an optional `after` datetime; `cutoff_from_range()` converts `7d`/`30d`/`90d` to a cutoff timestamp
-- Per-user stats via JSON API — `/api/user/{member_id}?range=` returns user analytics as JSON, rendered client-side by `dashboard/static/user.js`; supports the same `7d`/`30d`/`90d` time filtering as the main dashboard
-- Profanity leaderboard — configurable word list loaded from `config/profanity.txt`, cached in `settings.load_profanity_words()`; collapsible word reference on landing page; per-user top profanity words on user stats page
-- Activity heatmap — `get_activity_heatmap()` uses PostgreSQL `EXTRACT(dow/hour FROM created_at AT TIME ZONE 'US/Pacific')` to group messages by day-of-week and hour in Pacific Time; rendered as a CSS grid (not Chart.js) with color intensity
-- Awards & superlatives — `get_awards()` runs 7 targeted sub-queries (Night Owl, Early Bird, Emoji Monarch, Novelist, Chatterbox, Editor, Attachment Pro); server-rendered badge grid, no JS
-- Vocabulary diversity — `get_vocabulary_diversity()` computes type-token ratio per user over bounded message sets; horizontal bar chart via Chart.js
-- Conversation flow — `get_conversation_flow()` identifies consecutive-message reply pairs within a 5-minute gap in the same channel; server-rendered HTML table
-- Peak hours — `get_peak_hours()` uses `EXTRACT(hour FROM created_at AT TIME ZONE 'US/Pacific')` to group messages by hour of day (0–23) in Pacific Time; bar chart via Chart.js, fills in zero-count hours for a complete 24-bar display
-- Reaction time kings — `get_reaction_time_kings()` reuses the consecutive-message pairing logic from conversation flow to compute average response times per user; minimum 3 responses to qualify
-- Per-user peak hours — `get_user_peak_hours()` mirrors the server-wide peak hours but filtered by `member_id`; uses Pacific Time via `func.timezone("US/Pacific", ...)`
-- Per-user vocabulary diversity — `get_user_vocabulary_diversity()` computes TTR for a single user; returns `{"ttr", "unique_words", "total_words"}`; minimum 10 words threshold (returns `total_words: 0` when under threshold)
-- Sticky user header — `IntersectionObserver` on the user selector card triggers a fixed header showing the selected user's display name and range buttons when scrolling past the selector; `switchRange()` helper syncs original and sticky range buttons; `pointer-events: auto` added to `.visible` state for clickable buttons
-- Sticky range bar (landing page) — `IntersectionObserver` on `.range-picker` shows a fixed `#sticky-range-bar` with the same `<a>` links; shared `.sticky-range-bar` CSS in `base.html`
-- Removed panels — Message Lengths and Most Active Channels were removed from both the landing page and user page to focus on more engaging analytics. The query functions (`get_message_length_stats`, `get_top_channels`, `get_user_message_length_distribution`, `get_user_top_channels`) still exist in `queries.py` but are no longer called from `app.py`
-- Channel activity list — `get_channel_activity()` uses `LEFT JOIN` with `MAX(created_at)` to show all indexed channels with message count and last active date; server-rendered table
-- Daily/weekly digest — `get_digest()` computes today-vs-yesterday and this-week-vs-last-week deltas for messages and active users; no `after` param (always relative to now)
-- Server growth timeline — `get_unique_users_over_time()` uses `COUNT(DISTINCT author_id)` grouped by UTC day (consistent with `get_activity_over_time`); fills zero-days for a continuous line chart
-- Word cloud — `get_word_cloud_data()` returns 80 words (larger set than `get_top_words`); rendered via wordcloud2.js CDN with `requestAnimationFrame` to handle dynamic container sizing
-- Message sentiment trend — `get_sentiment_trend()` uses module-level `POSITIVE_WORDS`/`NEGATIVE_WORDS` frozensets (~20 words each); Python-side keyword counting over 5,000 recent messages; dual-line Chart.js chart
-- "Who Talks to Whom" network — adjacency heatmap grid rendered from `get_conversation_flow()` data; toggle button switches between visual heatmap and text table in the same card
-- Customizable dashboard block — `VIZ_REGISTRY` pattern maps visualization keys to `{label, dataKey, render, type}` objects; Tom Select dropdown with localStorage persistence; heading dynamically shows selected viz name; `top-users` excluded from registry (already a static card); appears on both landing page and user stats page with separate registries
-- Streamlined pages — landing page simplified to: digest, overview stats, channel activity, activity chart, most active users, custom view dropdown, awards; user page simplified to: stat cards, activity chart, custom view dropdown. All other visualizations accessible only via Custom View on both pages
-- CDN dependencies — wordcloud2.js and Tom Select CSS/JS loaded in `base.html` for shared use; Tom Select dark theme overrides in base styles
+- Full message content stored (not just metadata) to enable flexible future analytics
+- Three separate entry points (bot, dashboard, backfill) share one DB via `db/operations.py`
+- Async database access via asyncpg + SQLAlchemy async sessions (discord.py is fully async)
+- Dashboard queries in `dashboard/queries.py` return plain dicts; route handler stays thin
+- Every main query accepts optional `after` datetime for time filtering (`7d`/`30d`/`90d`)
+- Per-user stats via JSON API + client-side rendering; main dashboard via server-rendered Jinja2 + `data-*` attributes
+- Text analytics (top words, emoji, profanity, sentiment, catchphrases) use Python-side aggregation over bounded recent rows — simple now, materialized views later if needed
+- Hour-of-day analytics (heatmap, peak hours, awards) use `AT TIME ZONE 'US/Pacific'` in PostgreSQL; daily aggregation uses UTC
+- `VIZ_REGISTRY` pattern for customizable dashboard blocks — Tom Select dropdown with localStorage persistence on both pages
+- Streamlined pages: core stats as static cards, all other visualizations via Custom View dropdown
+- CDN dependencies: wordcloud2.js and Tom Select loaded in `base.html`
+
+See the **Learning Opportunity** section below for detailed rationale on each decision.
 
 ## Running Locally
 
@@ -130,6 +114,10 @@ The `/user` page and `/api/user/{member_id}` endpoint provide per-user analytics
 - **JSON API + client-side rendering** — unlike the main dashboard (server-rendered via Jinja2 + `data-*` attributes), user stats are fetched as JSON and rendered by `user.js`. This avoids a page reload when switching users but introduces a second rendering path to maintain.
 - **Dedicated query functions** — each per-user query (`get_user_top_words`, `get_user_activity_over_time`, etc.) mirrors the server-wide version but filters by `member_id`. These are separate functions rather than adding a `member_id` parameter to existing queries, keeping each function focused and testable.
 - **Member existence check** — the API returns 404 for unknown member IDs rather than silently returning empty data, so client-side code can distinguish "no data yet" from "bad ID".
+- **Client-side time filtering** — the user page uses `<button>` elements with JavaScript click handlers (not `<a>` page reloads) since user selection already works client-side. The selected range persists when switching users. All per-user query functions accept `after: datetime | None = None`.
+- **Per-user peak hours** — mirrors `get_peak_hours()` with `member_id` filter and the same 24-bar zero-fill pattern.
+- **Per-user vocabulary diversity** — returns stat cards (TTR, unique words, total words) instead of a chart. Returns `total_words: 0` when under the 10-word threshold; client checks this to show/hide the panel.
+- **Per-user profanity words** — reuses `_clean_content()`, `WORD_PATTERN`, and `settings.load_profanity_words()` from the server-wide leaderboard, filtered by `member_id`. Rendered as a styled list (not a chart).
 
 ### Profanity Leaderboard
 
@@ -187,22 +175,6 @@ The `get_reaction_time_kings()` query ranks users by average response time. Key 
 - **Minimum threshold** — users need at least 3 qualifying responses to appear, preventing outliers from a single fast reply.
 - **Bounded scan** — processes up to 10,000 recent messages ordered by `(channel_id, created_at)`. The docstring notes this may under-represent users active in higher-numbered channels, a known trade-off for keeping the query fast.
 
-### Per-User Profanity Words
-
-The `get_user_top_profanity_words()` query returns the most-used profanity words for a specific user. Key choices:
-
-- **Reuses existing infrastructure** — the same `_clean_content()`, `WORD_PATTERN`, and `settings.load_profanity_words()` used by the server-wide profanity leaderboard. The only difference is filtering by `member_id`.
-- **Styled list rendering** — the user page renders profanity words as a styled list (matching the emoji list pattern) rather than a chart, since there are typically only 5 items.
-- **Collapsible word reference** — the landing page includes a `<details>/<summary>` element inside the Profanity Leaderboard card that reveals the full word list. This uses zero JavaScript and degrades gracefully.
-
-### User Page Time Filtering
-
-The `/api/user/{member_id}` endpoint now accepts an optional `?range=7d|30d|90d` parameter, reusing the same `cutoff_from_range()` and `after` pattern from the main dashboard. Key choices:
-
-- **Client-side range picker** — the user page uses `<button>` elements with JavaScript click handlers instead of `<a>` tags with page reloads, since the user page already works client-side (Tom Select dropdown + fetch API). The selected range is stored in a JS variable and included in every API call.
-- **Range persists across user switches** — the time range is a user preference, not tied to a specific member. Switching from Alice to Bob keeps the same 7d/30d/90d filter applied.
-- **All user query functions accept `after`** — `get_user_top_words`, `get_user_message_count`, `get_user_activity_over_time`, `get_user_emoji_stats`, `get_user_top_profanity_words`, `get_user_peak_hours`, and `get_user_vocabulary_diversity` all accept `after: datetime | None = None`. The pattern is identical to the server-wide queries.
-
 ### Sticky User Header & Range Bar
 
 The user page displays a fixed header with the selected user's display name and range buttons when scrolling past the selector card. The landing page has a separate sticky range bar. Key choices:
@@ -210,22 +182,6 @@ The user page displays a fixed header with the selected user's display name and 
 - **IntersectionObserver over scroll events** — `IntersectionObserver` is more performant than a scroll event listener. The browser natively tracks when the selector card enters/leaves the viewport, with no debouncing or throttling needed. The same pattern is used on both pages.
 - **CSS transition for smooth appear/disappear** — the header uses `opacity` and `transform: translateY` transitions rather than an abrupt `display: none` toggle. The `pointer-events: none` property prevents it from interfering with clicks when invisible; `.visible` adds `pointer-events: auto` for the range buttons.
 - **switchRange() helper** — a shared function syncs both original and sticky range buttons using `classList.toggle("active", ...)`. This avoids duplicating sync logic in two click handlers.
-- **Shared CSS in base.html** — the `.sticky-range-bar` styles are defined in `base.html` since both pages may use them. The user page sticky header has its own CSS but reuses the same transition pattern.
-
-### Per-User Peak Hours
-
-The `get_user_peak_hours()` query mirrors `get_peak_hours()` but filters by `member_id`. Key choices:
-
-- **Pacific Time from the start** — uses `func.timezone("US/Pacific", Message.created_at)` consistent with the server-wide version.
-- **Same 24-bar fill pattern** — hours with no messages are filled with zero counts so the Chart.js bar chart always shows all 24 bars.
-
-### Per-User Vocabulary Diversity
-
-The `get_user_vocabulary_diversity()` query computes TTR for a single user. Key choices:
-
-- **Stat cards, not a chart** — since it's a single user's data (not a ranking), the panel shows three stat cards (TTR Score, Unique Words, Total Words) rather than a bar chart with one bar.
-- **Under-threshold handling** — returns `total_words: 0` when fewer than 10 words are found. The client checks `total_words > 0` to decide whether to show stats or the empty state. This keeps the threshold logic coupled between server and client via a single zero/non-zero contract.
-- **TTR description on both pages** — the landing page and user page both display "Type-Token Ratio (TTR) = unique words / total words. Higher ratio = more diverse vocabulary." to help users understand the metric.
 
 ### Channel Activity List
 
@@ -282,6 +238,18 @@ Both the landing page and user stats page include a Custom View block with a Tom
 - **Separate registries per page** — the landing page uses `VIZ_REGISTRY` (10 server-wide visualizations), the user page uses `USER_VIZ_REGISTRY` (4 per-user visualizations: top-words, peak-hours, emoji, profanity). Each has its own localStorage key (`dashboard-custom-viz` vs `user-custom-viz`). `activity` excluded from user registry (always static).
 - **Chart cleanup** — a module-level `customChartInstance` variable tracks the current Chart.js instance. Before re-rendering, `destroy()` is called to prevent memory leaks from orphaned chart canvases.
 - **Container type handling** — `canvas`-type renders create a `<canvas>` element, while `div`-type renders (heatmap, network) create a plain `<div>`. The heatmap gets a `.heatmap-grid` CSS class; the network does not, since it builds its own table internally.
+
+### Catchphrase Lifespans
+
+The `get_catchphrase_lifespans()` query detects multi-word catchphrases and tracks their rise, peak, and decline over time. Key choices:
+
+- **N-gram extraction** — `_extract_ngrams()` generates 2-4 word n-grams from cleaned message text. N-grams where more than half the words are stopwords are filtered out to keep meaningful phrases (e.g., "skill issue") while discarding noise (e.g., "and then"). Note: `WORD_PATTERN` requires 3+ chars, so short words like "of" are never extracted.
+- **Weekly timeline grouping** — usage is bucketed by ISO week (Monday start). Each qualifying phrase gets a status: `rising` (current week >= previous, includes flat), `peaked` (declining), or `dead` (zero uses this week).
+- **Qualification thresholds** — server-wide requires 5+ uses from 2+ unique users; per-user requires 3+ uses from 1 user. This prevents one-off phrases from cluttering results.
+- **Shared helpers** — `_accumulate_phrase_stats()` extracts n-gram accumulators from rows (used by both server-wide and per-user functions). `_prune_phrase_stats()` discards phrases below threshold to cap memory usage. `_build_catchphrase_result()` handles ranking, timeline construction, and status computation.
+- **Memory management** — after accumulation, `_prune_phrase_stats()` removes all phrases that can never qualify (below `min_uses` or `min_users`), freeing the potentially large intermediate dictionaries before building the final response.
+- **Bounded scan** — processes 15,000 messages server-wide, 5,000 per-user. N-gram extraction is heavier than single-word counting; consider caching at high volume.
+- **Chart lifecycle** — the catchphrase Custom View renders a card grid with a click-to-reveal Chart.js timeline. The internal chart reference is stored on the container element (`container._catchphraseChart`) so it can be properly destroyed when switching visualizations.
 
 ## Coding Standards and Best Practices
 
