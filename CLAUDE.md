@@ -45,7 +45,7 @@ A Discord bot that tracks server activity and displays fun analytics (top words,
 - Dashboard queries in `dashboard/queries.py` return plain dicts; route handler stays thin
 - Every main query accepts optional `after` datetime for time filtering (`7d`/`30d`/`90d`)
 - Per-user stats via JSON API + client-side rendering; main dashboard via server-rendered Jinja2 + `data-*` attributes
-- Text analytics (top words, emoji, profanity, sentiment, catchphrases) use Python-side aggregation over bounded recent rows — simple now, materialized views later if needed
+- Text analytics (top words, emoji, profanity, sentiment, catchphrases, brainrot) use Python-side aggregation over bounded recent rows — simple now, materialized views later if needed
 - Hour-of-day analytics (heatmap, peak hours, awards) use `AT TIME ZONE 'US/Pacific'` in PostgreSQL; daily aggregation uses UTC
 - `VIZ_REGISTRY` pattern for customizable dashboard blocks — Tom Select dropdown with localStorage persistence on both pages
 - Streamlined pages: core stats as static cards, all other visualizations via Custom View dropdown
@@ -118,6 +118,7 @@ The `/user` page and `/api/user/{member_id}` endpoint provide per-user analytics
 - **Per-user peak hours** — mirrors `get_peak_hours()` with `member_id` filter and the same 24-bar zero-fill pattern.
 - **Per-user vocabulary diversity** — returns stat cards (TTR, unique words, total words) instead of a chart. Returns `total_words: 0` when under the 10-word threshold; client checks this to show/hide the panel.
 - **Per-user profanity words** — reuses `_clean_content()`, `WORD_PATTERN`, and `settings.load_profanity_words()` from the server-wide leaderboard, filtered by `member_id`. Rendered as a styled list (not a chart).
+- **Per-user brainrot stats** — uses `_normalize_for_brainrot()` and `_count_brainrot_in_message()` with the cached brainrot matching structures. Shows stat cards (keyword hits, repeated messages) plus a term badge list. Rendered as HTML (not a chart).
 
 ### Profanity Leaderboard
 
@@ -235,7 +236,7 @@ Both the landing page and user stats page include a Custom View block with a Tom
 - **VIZ_REGISTRY pattern** — a plain object mapping string keys to `{label, dataKey, render, type}` entries. Adding a new visualization requires one new registry entry — no template or route changes needed.
 - **No duplication with static cards** — visualizations already rendered as permanent cards on the page (e.g., Most Active Users) are excluded from the registry to avoid showing the same chart twice.
 - **Dynamic heading** — `initCustomBlock()` updates `#custom-block-heading` text on initial load and on every dropdown change; resets to "Custom View" if the selection is cleared.
-- **Separate registries per page** — the landing page uses `VIZ_REGISTRY` (10 server-wide visualizations), the user page uses `USER_VIZ_REGISTRY` (4 per-user visualizations: top-words, peak-hours, emoji, profanity). Each has its own localStorage key (`dashboard-custom-viz` vs `user-custom-viz`). `activity` excluded from user registry (always static).
+- **Separate registries per page** — the landing page uses `VIZ_REGISTRY` (14 server-wide visualizations), the user page uses `USER_VIZ_REGISTRY` (6 per-user visualizations: top-words, peak-hours, emoji, profanity, catchphrases, brainrot). Each has its own localStorage key (`dashboard-custom-viz` vs `user-custom-viz`). `activity` excluded from user registry (always static).
 - **Chart cleanup** — a module-level `customChartInstance` variable tracks the current Chart.js instance. Before re-rendering, `destroy()` is called to prevent memory leaks from orphaned chart canvases.
 - **Container type handling** — `canvas`-type renders create a `<canvas>` element, while `div`-type renders (heatmap, network) create a plain `<div>`. The heatmap gets a `.heatmap-grid` CSS class; the network does not, since it builds its own table internally.
 
@@ -250,6 +251,18 @@ The `get_catchphrase_lifespans()` query detects multi-word catchphrases and trac
 - **Memory management** — after accumulation, `_prune_phrase_stats()` removes all phrases that can never qualify (below `min_uses` or `min_users`), freeing the potentially large intermediate dictionaries before building the final response.
 - **Bounded scan** — processes 15,000 messages server-wide, 5,000 per-user. N-gram extraction is heavier than single-word counting; consider caching at high volume.
 - **Chart lifecycle** — the catchphrase Custom View renders a card grid with a click-to-reveal Chart.js timeline. The internal chart reference is stored on the container element (`container._catchphraseChart`) so it can be properly destroyed when switching visualizations.
+
+### Brainrot / Meme Leaderboard
+
+The brainrot analytics system detects meme vocabulary and copypasta usage across the server. Key choices:
+
+- **File-based word list** — `config/brainrot.txt` follows the same pattern as `profanity.txt`: one entry per line, `#` comments, cached `frozenset` via `settings.load_brainrot_words()`. Multi-word phrases (e.g., "no cap") use spaces on a single line.
+- **Custom matching (not WORD_PATTERN)** — brainrot terms include short tokens ("fr", "L", "W") and multi-word phrases ("no cap", "vibe check") that `WORD_PATTERN` (3+ alpha chars) cannot handle. A compiled regex with `\b` word boundaries matches single-word terms, while substring search with manual boundary checks handles multi-word phrases.
+- **Double-count prevention** — multi-word phrases are matched first, and matched character spans are recorded. Single-word regex matches that fall inside any multi-word span are skipped (e.g., "cap" inside "no cap"). Additionally, single words that appear as components of multi-word phrases are excluded from the single-word regex during `_prepare_brainrot_matching()`.
+- **Cached matching structures** — `_prepare_brainrot_matching()` caches the compiled regex and phrase list at module level (`_brainrot_cache`) since the word list is immutable after first load. Avoids recompiling per query call.
+- **Normalization helper** — `_normalize_for_brainrot()` combines `_clean_content()`, lowercasing, stripping, and whitespace collapsing (via pre-compiled `_WHITESPACE_RE`). All four query functions use this single helper.
+- **Copypasta detection** — in the server-wide leaderboard, normalized message content is tracked in a dict; messages appearing 3+ times from 2+ unique users qualify as copypasta. Per-user stats use a simpler "repeated messages" metric (same content sent 2+ times by the user). Both require messages >= 20 chars to avoid flagging common short phrases.
+- **Four views** — landing page gets three `VIZ_REGISTRY` entries (leaderboard as stacked horizontal bar, top terms as vertical bar, trend as line chart); user page gets one `USER_VIZ_REGISTRY` entry (stat cards for keyword hits and repeated messages, plus term badges).
 
 ## Coding Standards and Best Practices
 

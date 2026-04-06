@@ -15,7 +15,7 @@ A Discord bot that tracks server activity and displays fun analytics on a web da
 - **Live Message Tracking** — the bot listens to every message in your server and stores it in PostgreSQL (content, author, channel, emoji count, attachments, and more)
 - **Upsert Strategy** — channels and members are automatically upserted so metadata stays fresh without duplicates
 - **Historical Backfill** — a one-off script ingests all past messages from every text channel, with batched commits and per-channel error handling
-- **Web Dashboard** — a FastAPI-powered analytics dashboard with a streamlined landing page: daily/weekly digest, overview stats, channel activity, activity trend, most active users, a customizable visualization block, and awards & superlatives. All other visualizations (word cloud, top words, profanity, emoji, sentiment, heatmap, vocabulary diversity, conversation flow, peak hours, reaction time kings, server growth, catchphrases) are accessible via the Custom View dropdown
+- **Web Dashboard** — a FastAPI-powered analytics dashboard with a streamlined landing page: daily/weekly digest, overview stats, channel activity, activity trend, most active users, a customizable visualization block, and awards & superlatives. All other visualizations (word cloud, top words, profanity, emoji, sentiment, heatmap, vocabulary diversity, conversation flow, peak hours, reaction time kings, server growth, catchphrases, brainrot leaderboard, brainrot terms, brainrot trend) are accessible via the Custom View dropdown
 - **Customizable Dashboard Block** — a dropdown (Tom Select) on both the landing page and user stats page where end-users can choose which visualization to display; the card heading dynamically shows the selected visualization name (e.g., "Word Cloud" instead of "Custom View"); selection persists via localStorage
 - **Time-Filtered Analytics** — dashboard supports 7-day, 30-day, and 90-day time range filters with a sticky range bar that follows you as you scroll, so you can change the filter from anywhere on the page
 - **User Stats Page** — a dedicated per-user analytics page with a streamlined layout mirroring the landing page: stat cards, activity chart, and a Custom View dropdown for all other visualizations (top words, emoji, profanity, peak hours, catchphrases). Includes a sticky header showing the selected user and range buttons as you scroll
@@ -32,6 +32,7 @@ A Discord bot that tracks server activity and displays fun analytics on a web da
 - **Word Cloud** — a visual word cloud (via wordcloud2.js) showing the most frequently used words, with size proportional to frequency
 - **Message Sentiment Trend** — a dual-line chart tracking daily positive and negative keyword hits, with a disclaimer that it's keyword-based, not AI-powered
 - **Catchphrase Lifespans** — automatically detects multi-word phrases (2-4 word n-grams) that spike in usage across multiple users, tracks their lifecycle (rising, peaked, or dead), and shows weekly usage timelines. Available on both the landing page and user stats page via Custom View
+- **Brainrot / Meme Leaderboard** — ranks users by brainrot vocabulary usage (skibidi, rizz, sigma, no cap, etc.) using a configurable word list (`config/brainrot.txt`), plus copypasta detection for repeated messages. Three Custom View visualizations on the landing page (leaderboard, top terms, trend over time) and per-user brainrot stats on the user page
 
 ## Getting Started
 
@@ -103,7 +104,8 @@ ruff check .
 │   └── backfill.py       # Historical data ingestion
 ├── config.py             # Centralized settings from env vars
 ├── config/               # Static configuration files
-│   └── profanity.txt     # Profanity word list for leaderboard
+│   ├── profanity.txt     # Profanity word list for leaderboard
+│   └── brainrot.txt      # Brainrot/meme word list (includes multi-word phrases)
 ├── tests/                # Test suite
 ├── docker-compose.yml    # Service orchestration
 ├── Dockerfile            # Container image
@@ -302,6 +304,14 @@ This section documents the "why" behind key decisions — useful context if you'
 **Why:** Single-word analytics miss the phrases that actually define a community's culture ("skill issue", "out of pocket"). Tracking rise and decline over time reveals how memes and slang spread through the server, adding a social dimension beyond raw word counts.
 
 **Consider:** N-gram extraction is significantly heavier than single-word counting — a 20-word message produces ~54 n-grams. To manage memory, `_prune_phrase_stats()` discards all phrases below the qualification threshold after accumulation. Server-wide catchphrases require 5+ uses from 2+ unique users (preventing one person's repetition from appearing as a server trend). Per-user thresholds are lower (3+ uses). Shared helpers (`_accumulate_phrase_stats`, `_prune_phrase_stats`, `_build_catchphrase_result`) keep the two query functions thin. Note that `WORD_PATTERN` requires 3+ characters, so short words like "of" are never extracted — "out of pocket" becomes the 2-gram "out pocket". The weekly timeline chart is rendered on card click, with the Chart.js instance stored on the container element for proper cleanup when switching visualizations.
+
+### Brainrot / Meme Leaderboard
+
+**What:** A brainrot analytics system that detects meme vocabulary ("skibidi", "rizz", "no cap", etc.) and copypasta (repeated messages) across the server, with a configurable word list at `config/brainrot.txt`. Three landing page visualizations (leaderboard as stacked bar, top terms, daily trend) and per-user stats.
+
+**Why:** Brainrot/meme vocabulary is a defining part of online communities, especially on Discord. Tracking it adds a fun, culturally relevant dimension to the analytics. The stacked bar chart separates keyword hits from copypasta so you can see *how* someone is brainrot — through vocabulary or through message repetition.
+
+**Consider:** Unlike profanity (all 3+ letter single words matching `WORD_PATTERN`), brainrot terms include short tokens ("fr", 2 chars) and multi-word phrases ("no cap", "vibe check"). This required custom matching logic — a compiled regex with `\b` word boundaries for single words, plus substring search with boundary checks for multi-word phrases. Multi-word phrases are matched first, and any single-word match that falls inside an already-matched phrase span is skipped to prevent double-counting (e.g., "cap" inside "no cap"). The matching structures are cached at module level since the word list is loaded once. Server-wide copypasta requires 3+ identical messages from 2+ users (intentionally different from per-user "repeated messages" which counts self-duplicates).
 
 ### Async Database Access
 

@@ -1443,3 +1443,315 @@ async def get_user_catchphrase_lifespans(
     return _build_catchphrase_result(
         *stats, min_uses=3, min_users=1, include_unique_users=False
     )
+
+
+# ---------------------------------------------------------------------------
+# Brainrot / meme analytics
+# ---------------------------------------------------------------------------
+
+_WHITESPACE_RE = re.compile(r"\s+")
+
+# Cached brainrot matching structures (populated on first use).
+_brainrot_cache: tuple[re.Pattern | None, list[str]] | None = None
+
+
+def _normalize_for_brainrot(text: str) -> str:
+    """Lowercase, strip URLs, collapse whitespace — shared by all brainrot queries."""
+    return _WHITESPACE_RE.sub(" ", _clean_content(text.lower()).strip())
+
+
+def _build_brainrot_pattern(
+    single_words: frozenset[str],
+) -> re.Pattern | None:
+    """Build a compiled regex for single brainrot words with word boundaries.
+
+    Returns None if the set is empty. Words are sorted longest-first
+    so that longer matches take priority in alternation.
+    """
+    if not single_words:
+        return None
+    escaped = sorted(single_words, key=len, reverse=True)
+    pattern = r"\b(?:" + "|".join(re.escape(w) for w in escaped) + r")\b"
+    return re.compile(pattern, re.IGNORECASE)
+
+
+def _count_brainrot_in_message(
+    normalized: str,
+    single_pattern: re.Pattern | None,
+    multi_phrases: list[str],
+) -> tuple[int, Counter[str]]:
+    """Count brainrot hits in a single normalized message.
+
+    Multi-word phrases are matched first.  Any single-word match that
+    falls inside an already-matched multi-word span is skipped so that
+    e.g. ``"no cap"`` does not also count ``"cap"`` separately.
+
+    Returns ``(total_count, per_term_counter)``.
+    """
+    term_counts: Counter[str] = Counter()
+
+    # Track character spans consumed by multi-word matches to prevent
+    # double-counting when a single word is part of a matched phrase.
+    matched_spans: list[tuple[int, int]] = []
+
+    for phrase in multi_phrases:
+        start = 0
+        while True:
+            idx = normalized.find(phrase, start)
+            if idx == -1:
+                break
+            before_ok = idx == 0 or not normalized[idx - 1].isalnum()
+            end_idx = idx + len(phrase)
+            after_ok = end_idx >= len(normalized) or not normalized[end_idx].isalnum()
+            if before_ok and after_ok:
+                term_counts[phrase] += 1
+                matched_spans.append((idx, end_idx))
+            start = idx + 1
+
+    if single_pattern:
+        for match in single_pattern.finditer(normalized):
+            m_start = match.start()
+            # Skip if this match overlaps any multi-word span
+            if any(s <= m_start < e for s, e in matched_spans):
+                continue
+            term_counts[match.group().lower()] += 1
+
+    total = sum(term_counts.values())
+    return total, term_counts
+
+
+def _prepare_brainrot_matching() -> tuple[re.Pattern | None, list[str]] | None:
+    """Load brainrot words and return cached matching structures.
+
+    Returns ``(single_pattern, multi_phrases)`` or *None* if no
+    brainrot words are configured.  The result is cached for the
+    lifetime of the process (the word list is loaded once).
+    """
+    global _brainrot_cache  # noqa: PLW0603
+    if _brainrot_cache is not None:
+        return _brainrot_cache
+
+    brainrot_words = settings.load_brainrot_words()
+    if not brainrot_words:
+        return None
+
+    multi_phrases = sorted(
+        [w for w in brainrot_words if " " in w], key=len, reverse=True
+    )
+    # Exclude single words that are fully contained as a suffix/prefix
+    # of a multi-word phrase to further reduce overlap risk.
+    multi_word_parts: set[str] = set()
+    for phrase in multi_phrases:
+        multi_word_parts.update(phrase.split())
+    single_words = frozenset(
+        w for w in brainrot_words if " " not in w and w not in multi_word_parts
+    )
+    single_pattern = _build_brainrot_pattern(single_words)
+
+    _brainrot_cache = (single_pattern, multi_phrases)
+    return _brainrot_cache
+
+
+async def get_brainrot_leaderboard(
+    session: AsyncSession, limit: int = 10, after: datetime | None = None
+) -> list[dict]:
+    """Return the top users by brainrot keyword usage + copypasta count."""
+
+    matching = _prepare_brainrot_matching()
+    if matching is None:
+        return []
+    single_pattern, multi_phrases = matching
+
+    stmt = (
+        select(Message.author_id, Message.content)
+        .join(Member, Message.author_id == Member.id)
+        .where(Member.is_bot.is_(False), Message.content.isnot(None))
+    )
+    if after:
+        stmt = stmt.where(Message.created_at >= after)
+    stmt = stmt.order_by(Message.created_at.desc()).limit(10_000)
+    rows = (await session.execute(stmt)).all()
+
+    keyword_counter: Counter[int] = Counter()
+    copypasta_counter: Counter[int] = Counter()
+
+    # Track normalized content -> author_ids for copypasta detection.
+    # Only messages >= 20 chars are tracked to avoid flagging short
+    # common phrases like "lol" or "gg".
+    content_authors: dict[str, list[int]] = {}
+
+    for row in rows:
+        normalized = _normalize_for_brainrot(row.content)
+
+        total, _terms = _count_brainrot_in_message(
+            normalized, single_pattern, multi_phrases
+        )
+        if total:
+            keyword_counter[row.author_id] += total
+
+        if len(normalized) >= 20:
+            content_authors.setdefault(normalized, []).append(row.author_id)
+
+    # Copypasta: content appearing 3+ times from 2+ unique users
+    for _content, authors in content_authors.items():
+        if len(authors) >= 3 and len(set(authors)) >= 2:
+            for aid in authors:
+                copypasta_counter[aid] += 1
+
+    all_users = set(keyword_counter) | set(copypasta_counter)
+    if not all_users:
+        return []
+
+    scored = [
+        (
+            uid,
+            keyword_counter.get(uid, 0),
+            copypasta_counter.get(uid, 0),
+            keyword_counter.get(uid, 0) + copypasta_counter.get(uid, 0),
+        )
+        for uid in all_users
+    ]
+    scored.sort(key=lambda x: x[3], reverse=True)
+    scored = scored[:limit]
+
+    top_ids = [uid for uid, *_ in scored]
+    member_stmt = select(
+        Member.id, Member.display_name, Member.username, Member.avatar_url
+    ).where(Member.id.in_(top_ids))
+    member_rows = (await session.execute(member_stmt)).all()
+    member_map = {
+        r.id: {"display_name": r.display_name or r.username, "avatar_url": r.avatar_url}
+        for r in member_rows
+    }
+
+    return [
+        {
+            "display_name": member_map[uid]["display_name"],
+            "avatar_url": member_map[uid]["avatar_url"],
+            "keyword_count": kw,
+            "copypasta_count": cp,
+            "total_score": total,
+        }
+        for uid, kw, cp, total in scored
+        if uid in member_map
+    ]
+
+
+async def get_top_brainrot_terms(
+    session: AsyncSession, limit: int = 15, after: datetime | None = None
+) -> list[dict]:
+    """Return the most-used brainrot terms across all messages."""
+
+    matching = _prepare_brainrot_matching()
+    if matching is None:
+        return []
+    single_pattern, multi_phrases = matching
+
+    stmt = select(Message.content).where(Message.content.isnot(None))
+    if after:
+        stmt = stmt.where(Message.created_at >= after)
+    stmt = stmt.order_by(Message.created_at.desc()).limit(10_000)
+    rows = (await session.execute(stmt)).scalars().all()
+
+    counter: Counter[str] = Counter()
+    for content in rows:
+        _total, terms = _count_brainrot_in_message(
+            _normalize_for_brainrot(content), single_pattern, multi_phrases
+        )
+        counter.update(terms)
+
+    return [
+        {"term": term, "count": count} for term, count in counter.most_common(limit)
+    ]
+
+
+async def get_brainrot_trend(
+    session: AsyncSession, days: int = 30, after: datetime | None = None
+) -> list[dict]:
+    """Return daily brainrot keyword hit counts over time."""
+
+    matching = _prepare_brainrot_matching()
+    if matching is None:
+        return []
+    single_pattern, multi_phrases = matching
+
+    now = datetime.now(UTC)
+    cutoff = after if after else now - timedelta(days=days)
+    range_days = (now - cutoff).days
+
+    stmt = (
+        select(Message.created_at, Message.content)
+        .where(Message.content.isnot(None), Message.created_at >= cutoff)
+        .order_by(Message.created_at.desc())
+        .limit(5_000)
+    )
+    rows = (await session.execute(stmt)).all()
+
+    counts_by_day: dict[str, int] = {}
+    for row in rows:
+        day_str = row.created_at.strftime("%Y-%m-%d")
+        total, _terms = _count_brainrot_in_message(
+            _normalize_for_brainrot(row.content), single_pattern, multi_phrases
+        )
+        if total:
+            counts_by_day[day_str] = counts_by_day.get(day_str, 0) + total
+
+    return [
+        {
+            "day": (cutoff + timedelta(days=i)).strftime("%Y-%m-%d"),
+            "count": counts_by_day.get(
+                (cutoff + timedelta(days=i)).strftime("%Y-%m-%d"), 0
+            ),
+        }
+        for i in range(range_days + 1)
+    ]
+
+
+async def get_user_brainrot_stats(
+    session: AsyncSession,
+    member_id: int,
+    limit: int = 10,
+    after: datetime | None = None,
+) -> dict:
+    """Return per-user brainrot breakdown: top terms + repeated message count."""
+
+    matching = _prepare_brainrot_matching()
+    if matching is None:
+        return {"top_terms": [], "repeated_msg_count": 0, "total_keyword_hits": 0}
+
+    single_pattern, multi_phrases = matching
+
+    stmt = select(Message.content).where(
+        Message.author_id == member_id, Message.content.isnot(None)
+    )
+    if after:
+        stmt = stmt.where(Message.created_at >= after)
+    stmt = stmt.order_by(Message.created_at.desc()).limit(5_000)
+    rows = (await session.execute(stmt)).scalars().all()
+
+    term_counter: Counter[str] = Counter()
+    total_hits = 0
+    content_counts: Counter[str] = Counter()
+
+    for content in rows:
+        normalized = _normalize_for_brainrot(content)
+
+        count, terms = _count_brainrot_in_message(
+            normalized, single_pattern, multi_phrases
+        )
+        total_hits += count
+        term_counter.update(terms)
+
+        # Track repeated messages (same content sent more than once by this user)
+        if len(normalized) >= 20:
+            content_counts[normalized] += 1
+
+    repeated_msg_count = sum(c for c in content_counts.values() if c >= 2)
+
+    return {
+        "top_terms": [
+            {"term": t, "count": c} for t, c in term_counter.most_common(limit)
+        ],
+        "repeated_msg_count": repeated_msg_count,
+        "total_keyword_hits": total_hits,
+    }
