@@ -15,4 +15,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Default command (overridden by docker-compose per service)
-CMD ["python", "-m", "bot.main"]
+CMD ["python", "-m", "dashboard.app"]
