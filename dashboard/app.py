@@ -47,6 +47,13 @@ from dashboard.queries import (
 )
 from db.database import async_session
 from db.models import Member
+import os
+
+# Read the PORT env variable injected by Cloud Run, default to 8080
+port = int(os.environ.get("PORT", 8080))
+
+# Example Uvicorn run command:
+uvicorn.run("main:app", host="0.0.0.0", port=port)
 
 _BASE = Path(__file__).parent
 
