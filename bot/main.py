@@ -8,6 +8,23 @@ from discord.ext import commands
 
 from config import settings
 
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK")
+
+def run_health_server():
+    # Listens on port 8080 (or your configured port)
+    server = HTTPServer(('0.0.0.0', 8080), HealthCheckHandler)
+    server.serve_forever()
+
+# Start the health check server in a background thread before running your bot
+threading.Thread(target=run_health_server, daemon=True).start()
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
