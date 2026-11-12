@@ -49,12 +49,6 @@ from db.database import async_session
 from db.models import Member
 import os
 
-# Read the PORT env variable injected by Cloud Run, default to 8080
-port = int(os.environ.get("PORT", 8080))
-
-# Example Uvicorn run command:
-uvicorn.run("main:app", host="0.0.0.0", port=port)
-
 _BASE = Path(__file__).parent
 
 logging.basicConfig(
@@ -255,13 +249,12 @@ def main() -> None:
     logger.info(
         "Starting dashboard on %s:%s", settings.DASHBOARD_HOST, settings.DASHBOARD_PORT
     )
-    uvicorn.run(
-        "dashboard.app:app",
-        host=settings.DASHBOARD_HOST,
-        port=settings.DASHBOARD_PORT,
-        reload=False,
+    # Read the PORT env variable injected by Cloud Run, default to 8080
+    port = int(os.environ.get("PORT", 8080))
+    
+    # Example Uvicorn run command:
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
     )
-
 
 if __name__ == "__main__":
     main()
